@@ -1,0 +1,6 @@
+# Normalize line endings: LF in the repo (Streamlit Cloud runs on Linux),
+# but keep Windows batch files as CRLF so the launcher works.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.ico binary

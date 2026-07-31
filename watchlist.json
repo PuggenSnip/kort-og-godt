@@ -1,0 +1,292 @@
+{
+  "settings": {
+    "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
+    "timeout_seconds": 15,
+    "cache_ttl_seconds": 3600,
+    "min_request_interval_seconds": 1.0,
+    "usd_dkk": 6.4,
+    "trend_min_days_7d": 3,
+    "trend_min_days_30d": 10,
+    "record_fixtures": true
+  },
+  "products": [
+    {
+      "id": "pitch-black-booster-box-en",
+      "name": "Pokémon Pitch Black Booster Box EN",
+      "sources": [
+        {
+          "shop": "symbizon.dk",
+          "method": "shopify_handle",
+          "url": "https://symbizon.dk/products/pokemon-kort-booster-box-mega-evolution-pitch-black-36-booster-packs",
+          "ref_price_2026_07_29": 1599
+        },
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/pitch-black-booster-box",
+          "ref_price_2026_07_29": 1799
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=pitch+black+display",
+          "query": "pitch black display",
+          "exclude": ["etb", "elite trainer", "sleeved", "blister"],
+          "ref_price_2026_07_29": 1879.95
+        },
+        {
+          "shop": "epicpanda.dk",
+          "method": "epicpanda",
+          "url": "https://epicpanda.dk/shop/pokemon-pitch-black-booster-box-37859p.html",
+          "ref_price_2026_07_29": 1999.95
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Booster-Boxes/Pitch-Black-Booster-Box?language=1"
+      },
+      "triggers": {
+        "buy_below_dkk": 1450,
+        "cardmarket_buy_below_eur": 185,
+        "cardmarket_stable_days": 14
+      },
+      "notes": "BUY if Cardmarket ≤ €185 stable 14 days, or any DK shop ≤ 1450 kr."
+    },
+    {
+      "id": "ascended-heroes-etb-en",
+      "name": "Pokémon Ascended Heroes ETB EN",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_search",
+          "url": "https://mtgwebshop.dk/",
+          "query": "ascended heroes elite trainer",
+          "exclude": ["pack", "blister", "sleeved"],
+          "ref_price_2026_07_29": 1499
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=ascended+heroes+elite+trainer",
+          "query": "ascended heroes elite trainer",
+          "ref_price_2026_07_29": 1699.95
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Ascended-Heroes-Elite-Trainer-Box?language=1"
+      },
+      "triggers": {
+        "buy_below_dkk": 1220,
+        "avoid_above_dkk": 1350
+      },
+      "notes": "BUY ≤ 1220 kr landed; AVOID > 1350. Set shipping_dkk on sources so 'landed' is honest."
+    },
+    {
+      "id": "pokemon-151-jp-booster-box",
+      "name": "Pokémon 151 JP Booster Box (sv2a)",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/scarlet-violet-151-booster-display-box-japansk",
+          "ref_price_2026_07_31": 2899
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=pokemon+151+japanese+booster+box",
+          "query": "151 booster box",
+          "exclude": ["korean", "chinese"],
+          "ref_price_2026_07_29": 4199.95
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Booster-Boxes/Pokemon-Card-151-Booster-Box?language=7",
+        "ref_price_2026_07_29_eur": 248
+      },
+      "triggers": {
+        "buy_below_dkk": 1500,
+        "cardmarket_buy_below_eur": 195
+      },
+      "notes": "BUY ≤ €195 (~1500 kr) — only from a Cardmarket seller with 200+ rating (manual judgment). kelz0r is an overpriced reference (4199.95 on 2026-07-29)."
+    },
+    {
+      "id": "prismatic-evolutions-etb-en",
+      "name": "Prismatic Evolutions ETB EN",
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=prismatic+evolutions+elite+trainer",
+          "query": "prismatic evolutions elite trainer",
+          "ref_price_2026_07_29": 1414.95
+        },
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_search",
+          "url": "https://mtgwebshop.dk/",
+          "query": "prismatic evolutions elite trainer",
+          "exclude": ["pack", "blister", "sleeved", "surprise"],
+          "ref_price_2026_07_29": 1499
+        },
+        {
+          "shop": "pricecharting.com",
+          "method": "pricecharting",
+          "url": "https://www.pricecharting.com/game/pokemon-prismatic-evolutions/elite-trainer-box",
+          "pc_field": "used",
+          "currency": "USD",
+          "reference_only": true
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Prismatic-Evolutions-Elite-Trainer-Box?language=1"
+      },
+      "triggers": {
+        "buy_below_dkk": 1099.99,
+        "avoid_above_dkk": 1100,
+        "cardmarket_buy_below_eur": 139.99
+      },
+      "notes": "Only interesting < €140 (~1100 kr), else AVOID. Buy triggers are set just under the round number so exactly 1100 kr / €140 is an AVOID, matching the strict '<' rule."
+    },
+    {
+      "id": "mtg-final-fantasy-play-booster-display",
+      "name": "MTG Final Fantasy Play Booster Display",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/final-fantasy-play-booster-box",
+          "ref_price_2026_07_31": 1349
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=final+fantasy+play+booster+display",
+          "query": "final fantasy play booster display",
+          "ref_price_2026_07_29": 1299.95
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Magic/Products/Booster-Boxes/Final-Fantasy-Play-Booster-Box?language=1",
+        "ref_price_2026_07_29_eur": 135
+      },
+      "triggers": {
+        "buy_below_dkk": 1300,
+        "cardmarket_buy_below_eur": 140
+      },
+      "notes": "BUY ≤ 1300 kr DK shop / ≤ €140 Cardmarket. Ceiling for a walk-in purchase: 1400 kr."
+    },
+    {
+      "id": "mtg-tmnt-collector-booster-box",
+      "name": "MTG TMNT Collector Booster Box",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/magic-the-gathering-teenage-mutant-ninja-turtles-collector-booster-box-display",
+          "ref_price_2026_07_31": 2499
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Magic/Products/Booster-Boxes/Teenage-Mutant-Ninja-Turtles-Collector-Booster-Box?language=1",
+        "ref_price_2026_07_29_eur": 259
+      },
+      "triggers": {
+        "cardmarket_buy_below_eur": 200
+      },
+      "notes": "Primarily Cardmarket-driven (BUY ≤ €200). mtgwebshop.dk carries the Collector box as a DK reference (2499 kr, out of stock on 2026-07-31)."
+    },
+    {
+      "id": "mtg-hobbit-play-booster-box",
+      "name": "MTG The Hobbit Play Booster Box",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/magic-the-gathering-the-hobbit-play-booster-box",
+          "ref_price_2026_07_29": 1299
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Magic/Products/Booster-Boxes/The-Hobbit-Play-Booster-Box?language=1"
+      },
+      "triggers": {
+        "buy_below_dkk": 1100,
+        "not_before": "2026-08-14"
+      },
+      "notes": "BUY ≤ 1100 kr after the 2026-08-14 release; never preorder above that."
+    },
+    {
+      "id": "riftbound-origins-display-en",
+      "name": "Riftbound Origins Display EN",
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/riftbound-origins-display-p-350999.html",
+          "query": "riftbound origins",
+          "ref_price_2026_07_29": 1499.95
+        }
+      ],
+      "cardmarket": {},
+      "triggers": {
+        "buy_below_dkk": 1250,
+        "manual_buy_flag": "riot_eol"
+      },
+      "flags": {
+        "riot_eol": false
+      },
+      "notes": "BUY ≤ 1250 kr, or immediately on news of a Riot end-of-life announcement (toggle the riot_eol flag in Config). Epic Panda listed this at 1699.95 on 2026-07-29 but has since delisted it (their URL now redirects to the frontpage) — re-add an epicpanda source in Config if it returns."
+    },
+    {
+      "id": "riftbound-unleashed-display",
+      "name": "Riftbound Unleashed Display",
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/riftbound-unleashed-display-p-369691.html",
+          "query": "riftbound unleashed",
+          "ref_price_2026_07_29": 1097.99
+        },
+        {
+          "shop": "riporfliptcg.com",
+          "method": "riporflip",
+          "url": "https://www.riporfliptcg.com/",
+          "set_name": "Riftbound Unleashed",
+          "reference_only": true
+        }
+      ],
+      "cardmarket": {},
+      "triggers": {},
+      "notes": "Rip-EV play, not an investment — watch the riporfliptcg EV% shown next to it."
+    },
+    {
+      "id": "pitch-black-etb-en",
+      "name": "Pokémon Pitch Black ETB EN",
+      "sources": [
+        {
+          "shop": "symbizon.dk",
+          "method": "shopify_search",
+          "url": "https://symbizon.dk/",
+          "query": "pitch black elite trainer",
+          "exclude": ["pack", "blister", "sleeved"],
+          "ref_price_2026_07_29": 599
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_search",
+          "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?keywords=pitch+black+elite+trainer",
+          "query": "pitch black elite trainer",
+          "ref_price_2026_07_29": 634.95
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Pitch-Black-Elite-Trainer-Box?language=1"
+      },
+      "triggers": {
+        "buy_below_dkk": 599
+      },
+      "notes": "Fætter BR at MSRP has a 1-year unopened-return policy = downside-hedged venue; prefer BR at ≤ 599 equivalent (check in store — BR is not scannable)."
+    }
+  ]
+}

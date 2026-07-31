@@ -1,0 +1,870 @@
+"""Unit tests for Kort og Godt parsers, trend math and the verdict engine.
+
+Parsers are tested against saved HTML/JSON fixtures in fixtures/synthetic/.
+Real responses recorded by the app land in fixtures/live/ and get a smoke
+test automatically once they exist.
+"""
+from __future__ import annotations
+
+import json
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import httpx
+import pytest
+
+import scanner
+from scanner import Observation, ParsedPrice
+
+FIX = Path(__file__).parent / "fixtures" / "synthetic"
+LIVE = Path(__file__).parent / "fixtures" / "live"
+
+SETTINGS = dict(scanner.DEFAULT_SETTINGS)
+
+
+def load(name: str) -> str:
+    return (FIX / name).read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Danish / USD price parsing
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("1.999,95", 1999.95),
+    ("1.999,95 DKK", 1999.95),
+    ("1.879,95DKK", 1879.95),
+    ("kr 634,95", 634.95),
+    ("634,95 kr.", 634.95),
+    ("599,-", 599.0),
+    ("4.199,95", 4199.95),
+    ("1.599", 1599.0),
+    ("1097.99", 1097.99),
+    ("52,95", 52.95),
+    ("", None),
+    ("ingen pris her", None),
+])
+def test_parse_danish_price(raw, expected):
+    assert scanner.parse_danish_price(raw) == expected
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("$1,234.56", 1234.56),
+    ("$255.00", 255.0),
+    ("155", 155.0),
+    ("", None),
+])
+def test_parse_usd_price(raw, expected):
+    assert scanner.parse_usd_price(raw) == expected
+
+
+def test_extract_dk_price_ignores_pack_counts():
+    text = "Pokemon Booster Box (36 packs) 1.879,95DKK På lager"
+    assert scanner.extract_dk_price(text) == 1879.95
+
+
+def test_extract_dk_price_kr_prefix():
+    assert scanner.extract_dk_price("Pris: kr 1.499,95") == 1499.95
+
+
+def test_fmt_dkk():
+    assert scanner.fmt_dkk(1999.95) == "1.999,95 kr"
+    assert scanner.fmt_dkk(1450, 0) == "1.450 kr"
+    assert scanner.fmt_dkk(None) == "–"
+
+
+def test_fx():
+    assert scanner._to_dkk(100, "EUR", SETTINGS) == pytest.approx(746.0)
+    assert scanner._to_dkk(100, "USD", SETTINGS) == pytest.approx(640.0)
+    assert scanner._to_dkk(100, "DKK", SETTINGS) == 100
+
+
+# ---------------------------------------------------------------------------
+# Parsers vs fixtures
+# ---------------------------------------------------------------------------
+
+def test_shopify_product_js():
+    p = scanner.parse_shopify_product_js(load("shopify_product.js.json"))
+    assert p.error is None
+    assert p.price == pytest.approx(1599.0)   # 159900 øre
+    assert p.in_stock is True
+    assert "Pitch Black" in p.title
+
+
+def test_shopify_product_js_soldout():
+    p = scanner.parse_shopify_product_js(load("shopify_product_soldout.js.json"))
+    assert p.error is None
+    assert p.price == pytest.approx(1299.0)
+    assert p.in_stock is False
+
+
+def test_shopify_product_js_garbage():
+    assert scanner.parse_shopify_product_js("<html>not json</html>").error
+
+
+def test_shopify_products_json_search():
+    p = scanner.parse_shopify_products_json(
+        load("shopify_products.json"),
+        ["ascended", "heroes", "elite", "trainer"],
+        exclude_words=["pack", "japansk"])
+    assert p.error is None
+    assert p.title == "Pokémon Ascended Heroes Elite Trainer Box"
+    assert p.price == pytest.approx(1499.0)
+    assert p.in_stock is True
+
+
+def test_shopify_products_json_handle():
+    p = scanner.parse_shopify_products_json(
+        load("shopify_products.json"), [], handle="pitch-black-booster-box")
+    assert p.error is None
+    assert p.price == pytest.approx(1799.0)
+
+
+def test_shopify_products_json_no_match():
+    p = scanner.parse_shopify_products_json(
+        load("shopify_products.json"), ["does", "not", "exist"])
+    assert p.error
+
+
+def test_kelz0r_search_display():
+    p = scanner.parse_kelz0r(load("kelz0r_search.html"),
+                             ["pitch", "black", "display"],
+                             ["elite trainer", "sleeved"])
+    assert p.error is None
+    assert p.price == pytest.approx(1879.95)
+    assert p.in_stock is True
+    assert p.allocation_risk is True          # "Risiko for allokering"
+    assert "Booster Display" in p.title
+
+
+def test_kelz0r_search_etb_soldout():
+    p = scanner.parse_kelz0r(load("kelz0r_search.html"),
+                             ["pitch", "black", "elite", "trainer"])
+    assert p.error is None
+    assert p.price == pytest.approx(634.95)
+    assert p.in_stock is False
+    assert p.allocation_risk is False
+
+
+def test_kelz0r_search_no_match():
+    p = scanner.parse_kelz0r(load("kelz0r_search.html"), ["riftbound"])
+    assert p.error
+
+
+def test_kelz0r_product_page():
+    p = scanner.parse_kelz0r_product(load("kelz0r_product.html"),
+                                     ["riftbound", "origins"])
+    assert p.error is None
+    assert p.price == pytest.approx(1499.95)  # itemprop content, not nav 59,95
+    assert p.in_stock is True                 # schema.org/InStock
+    assert "Riftbound" in p.title
+
+
+def test_kelz0r_product_soldout_allocation():
+    p = scanner.parse_kelz0r_product(load("kelz0r_product_soldout.html"))
+    assert p.error is None
+    assert p.price == pytest.approx(1097.99)
+    assert p.in_stock is False                # schema.org/OutOfStock
+    assert p.allocation_risk is True
+
+
+def test_kelz0r_product_wrong_page():
+    p = scanner.parse_kelz0r_product(load("kelz0r_product.html"),
+                                     ["pitch", "black"])
+    assert p.error                            # title mismatch -> UNVERIFIED
+
+
+def test_kelz0r_search_redirected_to_product_page():
+    # A search URL that lands on a single product page still parses via
+    # the microdata fallback.
+    p = scanner.parse_kelz0r(load("kelz0r_product.html"),
+                             ["riftbound", "origins"])
+    assert p.error is None
+    assert p.price == pytest.approx(1499.95)
+
+
+def test_epicpanda():
+    p = scanner.parse_epicpanda(load("epicpanda_product.html"))
+    assert p.error is None
+    assert p.price == pytest.approx(1999.95)
+    assert p.in_stock is True
+    assert "Pitch Black" in p.title
+
+
+def test_epicpanda_itemprop_soldout():
+    p = scanner.parse_epicpanda(load("epicpanda_itemprop.html"))
+    assert p.error is None
+    assert p.price == pytest.approx(1699.95)  # from itemprop content attr
+    assert p.in_stock is False
+
+
+def test_epicpanda_frontpage_redirect_is_error():
+    # Unknown product URLs get HTTP 200 + the frontpage (basket says
+    # '0,00 DKK') — must be an error, never a verified price of 0.
+    p = scanner.parse_epicpanda(load("epicpanda_frontpage.html"))
+    assert p.error
+    assert p.price is None
+
+
+class _RecordingTransport(httpx.BaseTransport):
+    """MockTransport that records every request URL (per redirect hop)."""
+
+    def __init__(self, routes):
+        self.routes = routes            # dict: url -> (status, headers, body)
+        self.calls: list[str] = []
+
+    def handle_request(self, request):
+        url = str(request.url)
+        self.calls.append(url)
+        status, headers, body = self.routes.get(url, (404, {}, "not found"))
+        return httpx.Response(status, headers=headers, text=body)
+
+
+def _fetcher(conn, routes, **over):
+    settings = dict(scanner.DEFAULT_SETTINGS, min_request_interval_seconds=0,
+                    **over)
+    t = _RecordingTransport(routes)
+    return scanner.PoliteFetcher(settings, conn, transport=t), t
+
+
+def test_fetcher_redirect_is_robots_checked_and_throttled(conn):
+    routes = {
+        "https://shop.dk/robots.txt": (200, {}, "User-agent: *\nDisallow: /secret/\n"),
+        "https://shop.dk/old": (301, {"location": "/secret/new"}, ""),
+        "https://shop.dk/secret/new": (200, {}, "should never be fetched"),
+    }
+    f, t = _fetcher(conn, routes)
+    res = f.get("https://shop.dk/old")
+    f.close()
+    # Redirect target is robots-disallowed -> blocked, and never fetched.
+    assert "blocked by robots.txt" in (res.error or "")
+    assert "https://shop.dk/secret/new" not in t.calls
+
+
+def test_fetcher_redirect_followed_when_allowed(conn):
+    routes = {
+        "https://shop.dk/robots.txt": (200, {}, "User-agent: *\nDisallow: /admin/\n"),
+        "https://shop.dk/a": (301, {"location": "/b"}, ""),
+        "https://shop.dk/b": (200, {}, "final"),
+    }
+    f, t = _fetcher(conn, routes)
+    res = f.get("https://shop.dk/a")
+    f.close()
+    assert res.ok and res.body == "final"
+
+
+def test_fetcher_robots_5xx_not_cached_as_allow(conn):
+    routes = {
+        "https://shop.dk/robots.txt": (503, {}, "temporarily down"),
+        "https://shop.dk/x": (200, {}, "data"),
+    }
+    f, t = _fetcher(conn, routes)
+    res = f.get("https://shop.dk/x")
+    f.close()
+    # 5xx robots => fail closed (disallow) and NOT written to http_cache.
+    assert "robots.txt" in (res.error or "")
+    cached = conn.execute(
+        "SELECT 1 FROM http_cache WHERE url = 'https://shop.dk/robots.txt'"
+    ).fetchone()
+    assert cached is None
+
+
+def test_fetcher_robots_404_allows_and_is_cached(conn):
+    routes = {
+        "https://shop.dk/robots.txt": (404, {}, "nope"),
+        "https://shop.dk/x": (200, {}, "data"),
+    }
+    f, t = _fetcher(conn, routes)
+    res = f.get("https://shop.dk/x")
+    f.close()
+    assert res.ok and res.body == "data"
+
+
+def test_shopify_search_keeps_no_match_error_over_html_page(conn):
+    # Out-of-range page served as HTML (200) must not overwrite the honest
+    # "no product matching" error from the real JSON pages.
+    page1 = json.dumps({"products": [
+        {"title": "Some Other Product", "handle": "x",
+         "variants": [{"price": "100.00", "available": True}]}]})
+    routes = {
+        "https://shop.dk/robots.txt": (404, {}, ""),
+        "https://shop.dk/products.json?limit=250&page=1": (200, {}, page1),
+        "https://shop.dk/products.json?limit=250&page=2": (200, {}, "<html>x</html>"),
+    }
+    f, _ = _fetcher(conn, routes)
+    product = {"id": "x", "name": "X"}
+    source = {"shop": "shop.dk", "method": "shopify_search",
+              "url": "https://shop.dk/", "query": "nonexistent widget"}
+    obs = scanner.scan_source(product, source, f, dict(SETTINGS))
+    f.close()
+    assert obs.status != "ok"
+    assert "no product matching" in (obs.error or "")
+    assert "invalid JSON" not in (obs.error or "")
+
+
+def test_fetcher_bad_currency_does_not_abort_scan(conn):
+    body = ('<html><span content="10.00" itemprop="price">10,00</span>'
+            "<h1>Thing</h1></html>")
+    routes = {
+        "https://shop.dk/robots.txt": (404, {}, ""),
+        "https://shop.dk/p": (200, {}, body),
+    }
+    f, _ = _fetcher(conn, routes)
+    product = {"id": "x", "name": "X"}
+    source = {"shop": "shop.dk", "method": "epicpanda",
+              "url": "https://shop.dk/p", "currency": "GBP"}
+    obs = scanner.scan_source(product, source, f, dict(SETTINGS))
+    f.close()
+    assert obs.status != "ok"                # bad currency -> this source errors
+    assert "GBP" in (obs.error or "")
+
+
+class _StubFetcher:
+    def __init__(self, body):
+        self._body = body
+
+    def get(self, url):
+        return scanner.FetchResult(url=url, status=200, body=self._body,
+                                   fetched_at=scanner.now_iso())
+
+
+def test_scan_source_rejects_nonpositive_price():
+    # Even if a parser slips, scan_source refuses price <= 0.
+    body = ('<html><link rel="canonical" href="https://x.dk/shop/a.html"/>'
+            "<h1>Weird page</h1><p>0,00 DKK</p></html>")
+    product = {"id": "x", "name": "X"}
+    source = {"shop": "epicpanda.dk", "method": "epicpanda", "url": "http://x"}
+    settings = dict(SETTINGS, record_fixtures=False)
+    obs = scanner.scan_source(product, source, _StubFetcher(body), settings)
+    assert obs.status != "ok"
+    assert "implausible" in (obs.error or "")
+
+
+def test_pricecharting():
+    p = scanner.parse_pricecharting(load("pricecharting_product.html"), "new")
+    assert p.error is None
+    assert p.price == pytest.approx(255.0)
+    p_used = scanner.parse_pricecharting(load("pricecharting_product.html"),
+                                         "used")
+    assert p_used.price == pytest.approx(210.50)
+
+
+def test_pricecharting_sealed_real_markup():
+    # Real pricecharting sealed page: only the Loose (used) column is filled;
+    # 'new'/'complete' are '-'. The parser must read Loose and, when asked for
+    # an empty column, fall back to it rather than returning nothing.
+    body = load("pricecharting_sealed.html")
+    assert scanner.parse_pricecharting(body, "used").price == pytest.approx(161.09)
+    p_new = scanner.parse_pricecharting(body, "new")
+    assert p_new.error is None and p_new.price == pytest.approx(161.09)
+
+
+def test_riporflip():
+    p = scanner.parse_riporflip(load("riporflip.html"), "Riftbound Unleashed")
+    assert p.error is None
+    assert p.price == pytest.approx(108.3)
+
+
+def test_riporflip_unknown_set():
+    assert scanner.parse_riporflip(load("riporflip.html"), "Nonexistium").error
+
+
+@pytest.mark.parametrize(
+    "path", sorted(LIVE.glob("*")) if LIVE.exists() else [],
+    ids=lambda p: p.name[:60])
+def test_live_fixture_smoke(path):
+    """Recorded real responses must parse correctly (or error honestly)."""
+    body = path.read_text(encoding="utf-8")
+    name = path.name
+    if "kelz0r" in name and "-p-" in name:
+        p = scanner.parse_kelz0r_product(body)
+        assert p.error is None and p.price > 0
+    elif "kelz0r" in name:
+        p = scanner.parse_kelz0r(body)
+    elif "epicpanda" in name:
+        p = scanner.parse_epicpanda(body)
+        if "riftbound" in name:               # known frontpage redirect
+            assert p.error and p.price is None
+        else:
+            assert p.error is None and p.price > 0
+    elif "pricecharting" in name:
+        p = scanner.parse_pricecharting(body, "used")
+        assert p.error is None and p.price > 0
+    elif "products-json" in name:
+        p = scanner.parse_shopify_products_json(body, ["zzz", "nomatch"])
+    elif name.endswith(".json"):
+        p = scanner.parse_shopify_product_js(body)
+        assert p.error is None and p.price > 0
+    else:
+        p = scanner.parse_kelz0r(body)
+    assert isinstance(p, ParsedPrice)         # parse never raises
+
+
+# ---------------------------------------------------------------------------
+# Verdict engine — temp DB helpers
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def conn(tmp_path):
+    c = scanner.get_db(tmp_path / "test.db")
+    yield c
+    c.close()
+
+
+def make_product(**over) -> dict:
+    p = {
+        "id": "test-product",
+        "name": "Test Product",
+        "sources": [{"shop": "shopA", "method": "epicpanda", "url": "http://a"}],
+        "cardmarket": {"url": "http://cm"},
+        "triggers": {"buy_below_dkk": 1450},
+    }
+    p.update(over)
+    return p
+
+
+def put(conn, shop="shopA", method="epicpanda", price=None, in_stock=True,
+        status="ok", days_ago=0, error=None, product_id="test-product",
+        source_kind="html", reference_only=False, currency="DKK",
+        price_native=None, allocation_risk=False):
+    when = (datetime.now() - timedelta(days=days_ago)).isoformat(
+        timespec="seconds")
+    obs = Observation(
+        product_id=product_id, shop=shop, url=f"http://{shop}", method=method,
+        observed_at=when, title="t", price_native=price_native or price,
+        currency=currency, price_dkk=price, landed_dkk=price,
+        in_stock=in_stock if status == "ok" else None,
+        status=status, error=error, allocation_risk=allocation_risk,
+        reference_only=reference_only, source_kind=source_kind)
+    scanner.insert_observation(conn, obs, scan_id=1)
+    return obs
+
+
+def test_verdict_buy_dk(conn):
+    put(conn, price=1400)
+    v = scanner.product_verdict(conn, make_product(), SETTINGS)
+    assert v.code == "BUY"
+    assert v.shop == "shopA"
+    assert v.cheapest_dkk == 1400
+
+
+def test_verdict_unverified_beats_buy(conn):
+    put(conn, shop="shopA", price=1300)                 # below trigger!
+    put(conn, shop="shopB", method="kelz0r_search", price=1500, days_ago=1)
+    put(conn, shop="shopB", method="kelz0r_search", status="error",
+        error="timeout", price=None)
+    p = make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        {"shop": "shopB", "method": "kelz0r_search", "url": "http://b"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "UNVERIFIED"
+    assert any("last good" in f for f in v.failures)
+
+
+def test_verdict_no_buy_when_out_of_stock(conn):
+    put(conn, price=1300, in_stock=False)
+    v = scanner.product_verdict(conn, make_product(), SETTINGS)
+    assert v.code == "HOLD"
+    assert "no verified in-stock" in v.reason
+
+
+def test_verdict_avoid(conn):
+    put(conn, price=1400)
+    p = make_product(triggers={"buy_below_dkk": 1220, "avoid_above_dkk": 1350})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "AVOID"
+
+
+def test_verdict_falling_beats_avoid(conn):
+    for d in (1, 2, 3):
+        put(conn, price=1500, days_ago=d)
+    put(conn, price=1400)
+    p = make_product(triggers={"buy_below_dkk": 1220, "avoid_above_dkk": 1350})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "WAIT_FALLING"           # spec priority: falling < avoid
+    assert "7d avg" in v.reason
+
+
+def test_verdict_hold_distance(conn):
+    put(conn, price=1600)
+    v = scanner.product_verdict(conn, make_product(), SETTINGS)
+    assert v.code == "HOLD"
+    assert v.vs_trigger_dkk == pytest.approx(150)
+
+
+def test_verdict_manual_flag(conn):
+    put(conn, status="error", error="down", price=None)
+    p = make_product(triggers={"buy_below_dkk": 1250,
+                               "manual_buy_flag": "riot_eol"},
+                     flags={"riot_eol": True})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert "riot_eol" in v.reason
+
+
+def test_verdict_cm_buy_without_stability_window(conn):
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=190 * scanner.EUR_DKK,
+        price_native=190, currency="EUR")
+    p = make_product(sources=[],
+                     triggers={"cardmarket_buy_below_eur": 195})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert "Cardmarket" in v.reason
+
+
+def test_verdict_cm_stability_insufficient(conn):
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=180 * scanner.EUR_DKK,
+        price_native=180, currency="EUR")
+    p = make_product(sources=[],
+                     triggers={"cardmarket_buy_below_eur": 185,
+                               "cardmarket_stable_days": 14})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"
+    assert any("not yet stable" in n for n in v.notes)
+
+
+def test_verdict_cm_stability_met(conn):
+    for days_ago in (15, 7, 0):
+        put(conn, shop="cardmarket", method="cardmarket_manual",
+            source_kind="manual", price=180 * scanner.EUR_DKK,
+            price_native=180, currency="EUR", days_ago=days_ago)
+    p = make_product(sources=[],
+                     triggers={"cardmarket_buy_below_eur": 185,
+                               "cardmarket_stable_days": 14})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert "stable" in v.reason
+
+
+def test_verdict_cm_stability_broken_by_spike(conn):
+    for days_ago, eur in ((15, 180), (7, 190), (0, 180)):
+        put(conn, shop="cardmarket", method="cardmarket_manual",
+            source_kind="manual", price=eur * scanner.EUR_DKK,
+            price_native=eur, currency="EUR", days_ago=days_ago)
+    p = make_product(sources=[],
+                     triggers={"cardmarket_buy_below_eur": 185,
+                               "cardmarket_stable_days": 14})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"
+
+
+def test_verdict_cm_stability_prewindow_spike_ignored(conn):
+    # €250 just before the window, €180 inside it — NOT stable for 14 days.
+    for days_ago, eur in ((20, 250), (6, 180), (0, 180)):
+        put(conn, shop="cardmarket", method="cardmarket_manual",
+            source_kind="manual", price=eur * scanner.EUR_DKK,
+            price_native=eur, currency="EUR", days_ago=days_ago)
+    p = make_product(sources=[],
+                     triggers={"cardmarket_buy_below_eur": 185,
+                               "cardmarket_stable_days": 14})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"
+    assert any("start of the" in n for n in v.notes)
+
+
+def test_verdict_cm_entry_expires(conn):
+    # A 40-day-old manual entry must not keep driving BUY.
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=190 * scanner.EUR_DKK,
+        price_native=190, currency="EUR", days_ago=40)
+    p = make_product(sources=[], triggers={"cardmarket_buy_below_eur": 195})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"
+    assert any("stale" in n for n in v.notes)
+
+
+def test_verdict_ignores_removed_source_stale_buy(conn):
+    # 'old' shop was removed from config; its cheap in-stock row must not BUY.
+    put(conn, shop="old", method="epicpanda", price=1200, days_ago=90)
+    put(conn, shop="live", method="epicpanda", price=1600)
+    p = make_product(sources=[{"shop": "live", "method": "epicpanda",
+                               "url": "http://live"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"
+    assert v.cheapest_shop == "live"
+
+
+def test_verdict_ignores_removed_source_stale_failure(conn):
+    # A removed source's last error must not wedge the product in UNVERIFIED.
+    put(conn, shop="old", method="kelz0r_search", status="error",
+        error="gone", price=None, days_ago=30)
+    put(conn, shop="live", method="epicpanda", price=1600)
+    p = make_product(sources=[{"shop": "live", "method": "epicpanda",
+                               "url": "http://live"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "UNVERIFIED"
+    assert v.failures == []
+
+
+def test_verdict_preorder_note(conn):
+    put(conn, price=1050)
+    future = (date.today() + timedelta(days=10)).isoformat()
+    p = make_product(triggers={"buy_below_dkk": 1100, "not_before": future})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert any("preorder" in n for n in v.notes)
+
+
+def test_verdict_allocation_note(conn):
+    put(conn, price=1600, allocation_risk=True)
+    v = scanner.product_verdict(conn, make_product(), SETTINGS)
+    assert any("allokering" in n.lower() for n in v.notes)
+
+
+def test_verdict_no_data(conn):
+    v = scanner.product_verdict(conn, make_product(sources=[]), SETTINGS)
+    assert v.code == "UNVERIFIED"
+
+
+def test_verdict_robots_skip_does_not_block_verdict(conn):
+    # A robots-blocked source must not force UNVERIFIED when another shop is OK.
+    put(conn, shop="live", method="epicpanda", price=1600)
+    put(conn, shop="kelz0r.dk", method="kelz0r_search", status="skipped",
+        error="blocked by robots.txt", price=None)
+    p = make_product(sources=[
+        {"shop": "live", "method": "epicpanda", "url": "http://live"},
+        {"shop": "kelz0r.dk", "method": "kelz0r_search", "url": "http://k"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "HOLD"                     # 1600 > 1450 trigger
+    assert any("not checked" in n for n in v.notes)
+    assert v.failures == []
+
+
+def test_verdict_all_sources_skipped_is_unverified(conn):
+    put(conn, shop="kelz0r.dk", method="kelz0r_search", status="skipped",
+        error="blocked by robots.txt", price=None)
+    p = make_product(sources=[{"shop": "kelz0r.dk", "method": "kelz0r_search",
+                               "url": "http://k"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "UNVERIFIED"
+    assert "robots.txt" in v.reason
+
+
+# ---------------------------------------------------------------------------
+# Trend math
+# ---------------------------------------------------------------------------
+
+def test_trend_insufficient_history(conn):
+    put(conn, price=1500, days_ago=1)
+    put(conn, price=1400)
+    t = scanner.compute_trend(conn, "test-product", SETTINGS)
+    assert t.avg7 is None                     # 1 prior day < min 3 — no fake trend
+    assert t.avg30 is None
+    assert t.today == 1400
+
+
+def test_trend_7d(conn):
+    for d in (1, 2, 3):
+        put(conn, price=1500, days_ago=d)
+    put(conn, price=1400)
+    t = scanner.compute_trend(conn, "test-product", SETTINGS)
+    assert t.avg7 == pytest.approx(1500)
+    assert t.today == 1400
+    assert t.pct_vs(t.avg7) == pytest.approx(-6.67, abs=0.01)
+
+
+def test_trend_excludes_manual_cardmarket(conn):
+    # A sporadic manual CM entry must not enter the per-day cheapest series
+    # (would fabricate a WAIT_FALLING trend).
+    put(conn, shop="live", method="epicpanda", price=1600, days_ago=1)
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=1400, price_native=190, currency="EUR",
+        days_ago=1)
+    series = dict(scanner.daily_cheapest_series(conn, "test-product"))
+    day = (date.today() - timedelta(days=1)).isoformat()
+    assert series[day] == pytest.approx(1600)   # manual 1400 excluded
+
+
+def test_trend_ignores_reference_and_failures(conn):
+    for d in (1, 2, 3):
+        put(conn, price=1500, days_ago=d)
+        put(conn, shop="ref", price=99, days_ago=d, reference_only=True)
+        put(conn, shop="bad", price=None, days_ago=d, status="error",
+            error="x")
+    t = scanner.compute_trend(conn, "test-product", SETTINGS)
+    assert t.avg7 == pytest.approx(1500)      # reference rows never mix in
+
+
+# ---------------------------------------------------------------------------
+# Manual Cardmarket entry + export
+# ---------------------------------------------------------------------------
+
+def test_add_manual_cm_entry(conn):
+    p = make_product()
+    obs = scanner.add_manual_cardmarket_entry(conn, p, 185.0, SETTINGS)
+    assert obs.price_dkk == pytest.approx(185 * 7.46)
+    row = scanner._latest_cm_entry(conn, "test-product")
+    assert row["price_native"] == 185.0
+    assert row["source_kind"] == "manual"
+
+
+def test_export_markdown(conn, tmp_path):
+    put(conn, price=1400)
+    cfg = {"settings": SETTINGS, "products": [make_product()]}
+    md = scanner.export_markdown(cfg, conn)
+    assert "Kort og Godt" in md
+    assert "Test Product" in md
+    assert "BUY" in md
+    assert "insufficient history" in md
+    assert "http://shopA" in md               # traceability: URL in report
+
+
+def _cfg_with(*products):
+    return {"settings": SETTINGS, "products": list(products)}
+
+
+def test_current_value_replacement_picks_cheapest_instock(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1400)
+    put(conn, shop="shopB", method="kelz0r_product", price=1300)
+    p = make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        {"shop": "shopB", "method": "kelz0r_product", "url": "http://b"}])
+    cv = scanner.current_value(conn, p, SETTINGS, "replacement")
+    assert cv is not None and cv[0] == pytest.approx(1300) and cv[1] == "shopB"
+
+
+def test_current_value_none_when_out_of_stock(conn):
+    put(conn, price=1300, in_stock=False)
+    assert scanner.current_value(conn, make_product(), SETTINGS,
+                                 "replacement") is None
+
+
+def test_current_value_cardmarket_basis(conn):
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=190 * scanner.EUR_DKK, price_native=190,
+        currency="EUR")
+    cv = scanner.current_value(conn, make_product(), SETTINGS, "cardmarket")
+    assert cv is not None and cv[0] == pytest.approx(190 * scanner.EUR_DKK)
+
+
+def test_current_value_cardmarket_stale_is_none(conn):
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=190 * scanner.EUR_DKK, price_native=190,
+        currency="EUR", days_ago=60)
+    assert scanner.current_value(conn, make_product(), SETTINGS,
+                                 "cardmarket") is None
+
+
+def test_value_collection_pl_and_unverified(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = _cfg_with(make_product())
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Test Product", "product_id": "test-product",
+         "quantity": 2, "unit_cost_dkk": 1500},
+        {"id": "h2", "name": "A single", "product_id": None, "quantity": 1,
+         "unit_cost_dkk": 50, "manual_value_dkk": 80},
+        {"id": "h3", "name": "Mystery box", "product_id": None, "quantity": 1,
+         "unit_cost_dkk": 100},                     # no value -> unverified
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    assert (v["n_items"], v["n_valued"], v["n_unverified"]) == (3, 2, 1)
+    assert v["total_value"] == pytest.approx(1600 * 2 + 80)      # 3280
+    assert v["total_cost"] == pytest.approx(1500 * 2 + 50)       # 3050 (priced)
+    assert v["unrealized_pl"] == pytest.approx(230)
+    assert v["n_valued_no_cost"] == 0
+
+
+def test_value_collection_no_cost_valued_excluded_from_pl(conn):
+    # A valued holding with NO recorded cost must count toward market value
+    # but NOT inflate P/L (its cost is unknown, not zero).
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = _cfg_with(make_product())
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Costed", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1500},          # +100 P/L
+        {"id": "h2", "name": "Gift box", "product_id": "test-product",
+         "quantity": 1},                                 # valued 1600, no cost
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    assert v["n_valued"] == 2
+    assert v["total_value"] == pytest.approx(3200)       # both counted as worth
+    assert v["total_cost"] == pytest.approx(1500)        # only the costed one
+    assert v["unrealized_pl"] == pytest.approx(100)      # NOT 1700
+    assert v["n_valued_no_cost"] == 1
+    assert v["value_no_cost"] == pytest.approx(1600)
+
+
+def test_snapshot_is_idempotent_per_day_and_series(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = _cfg_with(make_product())
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Test Product", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1500}]}
+    scanner.snapshot_collection(conn, cfg, collection)
+    scanner.snapshot_collection(conn, cfg, collection)   # same day -> overwrite
+    series = scanner.collection_value_series(conn)
+    assert len(series) == 1
+    assert series[0]["total_value_dkk"] == pytest.approx(1600)
+
+
+def test_value_collection_realized_pl(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = _cfg_with(make_product())
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Held", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1500},
+        {"id": "h2", "name": "Flipped box", "product_id": None, "quantity": 2,
+         "unit_cost_dkk": 1000, "sold_price_dkk": 1300,
+         "sold_date": "2026-07-20"},
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    # Held: 1 item (the sold one is excluded from current totals).
+    assert v["n_items"] == 1 and v["n_valued"] == 1
+    assert v["total_value"] == pytest.approx(1600)
+    # Realized: (1300 - 1000) * 2 = 600
+    assert v["n_sold"] == 1
+    assert v["realized_proceeds"] == pytest.approx(2600)
+    assert v["realized_cost"] == pytest.approx(2000)
+    assert v["realized_pl"] == pytest.approx(600)
+
+
+def test_sold_holding_excluded_from_snapshot_value(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = _cfg_with(make_product())
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Held", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1500},
+        {"id": "h2", "name": "Sold", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1000, "sold_price_dkk": 1300},
+    ]}
+    scanner.snapshot_collection(conn, cfg, collection)
+    s = scanner.collection_value_series(conn)[-1]
+    assert s["total_value_dkk"] == pytest.approx(1600)   # only the held one
+
+
+def test_load_collection_missing_file(tmp_path):
+    col = scanner.load_collection(tmp_path / "nope.json")
+    assert col["holdings"] == []
+    assert col["settings"]["valuation_basis"] == "replacement"
+
+
+def test_config_in_db_roundtrip(conn):
+    cfg = scanner.get_config(conn)                 # seeds from watchlist.json
+    assert cfg["products"], "seeded products expected"
+    assert "usd_dkk" in cfg["settings"]            # settings merged w/ defaults
+    cfg["products"][0].setdefault("triggers", {})["buy_below_dkk"] = 111
+    scanner.put_config(conn, cfg)
+    again = scanner.get_config(conn)               # now reads from the DB
+    assert again["products"][0]["triggers"]["buy_below_dkk"] == 111
+
+
+def test_collection_in_db_roundtrip(conn):
+    col = scanner.get_collection(conn)             # seeds from collection.json
+    col["holdings"].append({"id": "t", "name": "ZZZ", "quantity": 1,
+                            "unit_cost_dkk": 10})
+    scanner.put_collection(conn, col)
+    again = scanner.get_collection(conn)
+    assert any(h["name"] == "ZZZ" for h in again["holdings"])
+    assert again["settings"]["valuation_basis"] in scanner.VALUATION_BASES
+
+
+def test_export_markdown_no_crash_when_avg_but_no_today(conn):
+    # Regression: avg7 exists (>=3 prior days) but no in-stock price today ->
+    # pct_vs returns None; export must not TypeError on the format string.
+    for d in (1, 2, 3):
+        put(conn, price=1500, days_ago=d)
+    cfg = {"settings": SETTINGS, "products": [make_product()]}
+    md = scanner.export_markdown(cfg, conn)          # must not raise
+    assert "no verified in-stock price today" in md

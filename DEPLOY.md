@@ -1,0 +1,93 @@
+# Deploying Kort og Godt for 3 people (shared, live data)
+
+This puts the app online at one URL that all three of you open from any PC.
+Everyone sees the **same live data** (scans, Cardmarket entries, collection),
+and when you push a code change it **auto-updates** for everyone.
+
+Architecture: **Streamlit Community Cloud** (runs the app, free) +
+**Supabase Postgres** (the shared database, free). Local runs still work
+unchanged — with no `DATABASE_URL` set, the app uses a local SQLite file.
+
+You'll need to create three free accounts (GitHub, Supabase, Streamlit). I
+can't create accounts for you, so those sign-up clicks are yours; everything
+else is prepared.
+
+---
+
+## 1. Put the code on GitHub (once)
+
+From this folder:
+
+```bash
+git init
+git add .
+git commit -m "Kort og Godt"
+```
+
+Then create a **private** repo on github.com and follow its "push existing
+repository" lines, e.g.:
+
+```bash
+git remote add origin https://github.com/<you>/kort-og-godt.git
+git branch -M main
+git push -u origin main
+```
+
+`.gitignore` already excludes the local database and `secrets.toml`, so no
+private data or passwords get pushed.
+
+## 2. Create the shared database (Supabase)
+
+1. Sign up at **supabase.com** → **New project** (pick a region near you, set a
+   database password).
+2. In the project: **Connect** (top bar) → **Connection string** → **URI**.
+   Copy it. It looks like:
+   `postgresql://postgres:YOURPASS@db.xxxx.supabase.co:5432/postgres`
+3. Add `?sslmode=require` to the end. Keep this string safe — it's your
+   `DATABASE_URL`.
+
+The app creates its tables automatically on first connect — nothing to run.
+
+## 3. Deploy on Streamlit Community Cloud
+
+1. Sign up at **share.streamlit.io** with your GitHub account.
+2. **Create app** → pick your repo, branch `main`, main file `app.py`.
+3. **Advanced settings → Secrets**, paste (using your real values):
+
+   ```toml
+   DATABASE_URL = "postgresql://postgres:YOURPASS@db.xxxx.supabase.co:5432/postgres?sslmode=require"
+   APP_PASSWORD = "a-shared-password-for-the-three-of-you"
+   ```
+
+4. **Deploy**. In ~a minute you get a URL like
+   `https://kort-og-godt.streamlit.app`.
+
+Share the URL + the password with the other two. Done — same data for all.
+
+## 4. Daily use
+
+- All three open the URL, type the password, and use it normally.
+- A **SCAN** by anyone updates prices for everyone (the 1-hour cache is shared
+  too, so you don't hammer the shops).
+- Cardmarket entries, trigger edits, and the collection are all shared.
+
+## 5. "Live updating" the program
+
+- **Data** is already live/shared through Postgres.
+- **Code**: edit locally, then `git commit` + `git push`. Streamlit Cloud
+  redeploys automatically within a minute and all three get the new version —
+  no reinstall.
+
+## Notes
+
+- **Free tiers** comfortably cover 3 users. Supabase pauses a free project
+  after ~1 week of zero activity; opening the app wakes it (first load may take
+  a few seconds).
+- **Seeding**: on the very first run the shared DB is seeded from
+  `watchlist.json` and `collection.json` in the repo. After that the DB is the
+  source of truth; edit via the app's Config/Collection tabs (or push new JSON
+  and clear the `app_config` table to re-seed).
+- **Backup**: Supabase has its own backups; you can also use the app's
+  *Export markdown report* and *Backup watchlist.json* buttons.
+- **Local/offline** still works: just run `Start Kort og Godt.bat` with no
+  `DATABASE_URL` — it uses a local SQLite file (not shared).

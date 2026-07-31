@@ -1,0 +1,6 @@
+# Streamlit configuration (safe to commit — no secrets here).
+# Dark + gold to match the app icon. Delete this [theme] block for Streamlit's
+# default look.
+[theme]
+base = "dark"
+primaryColor = "#D6B05C"

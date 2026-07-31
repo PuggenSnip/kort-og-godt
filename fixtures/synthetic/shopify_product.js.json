@@ -1,0 +1,17 @@
+{
+  "id": 8123456789,
+  "title": "Pokémon Kort Booster Box Mega Evolution Pitch Black (36 Booster Packs)",
+  "handle": "pokemon-kort-booster-box-mega-evolution-pitch-black-36-booster-packs",
+  "available": true,
+  "price": 159900,
+  "price_min": 159900,
+  "price_max": 159900,
+  "variants": [
+    {
+      "id": 44123456789,
+      "title": "Default Title",
+      "price": 159900,
+      "available": true
+    }
+  ]
+}

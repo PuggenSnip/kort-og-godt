@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local database & runtime data (the cloud uses Postgres, not these)
+*.db
+kortoggodt.db
+
+# Secrets — NEVER commit these (contains DB URL + password)
+.streamlit/secrets.toml
+
+# Recorded live HTTP fixtures (machine-specific; regenerated on scan)
+fixtures/live/
+
+# OS / editor
+.DS_Store
+Thumbs.db

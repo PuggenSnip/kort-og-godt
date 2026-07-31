@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "valuation_basis": "replacement"
+  },
+  "holdings": [
+    {
+      "id": "example-1",
+      "name": "Pokémon Pitch Black Booster Box EN",
+      "product_id": "pitch-black-booster-box-en",
+      "quantity": 1,
+      "unit_cost_dkk": 1500,
+      "acquired": "2026-06-15",
+      "manual_value_dkk": null,
+      "notes": "EXAMPLE holding — edit or delete in the Collection tab."
+    },
+    {
+      "id": "example-2",
+      "name": "Pokémon Pitch Black ETB EN",
+      "product_id": "pitch-black-etb-en",
+      "quantity": 2,
+      "unit_cost_dkk": 550,
+      "acquired": "2026-06-15",
+      "manual_value_dkk": null,
+      "notes": "EXAMPLE holding — edit or delete in the Collection tab."
+    }
+  ]
+}

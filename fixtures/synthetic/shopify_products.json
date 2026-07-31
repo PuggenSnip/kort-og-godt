@@ -1,0 +1,36 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "title": "Pokémon Ascended Heroes Booster Pack",
+      "handle": "ascended-heroes-booster-pack",
+      "variants": [
+        { "id": 11, "title": "Default Title", "price": "59.00", "available": true }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Pokémon Ascended Heroes Elite Trainer Box",
+      "handle": "ascended-heroes-elite-trainer-box",
+      "variants": [
+        { "id": 12, "title": "Default Title", "price": "1499.00", "available": true }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Pokémon Ascended Heroes Elite Trainer Box (Japansk)",
+      "handle": "ascended-heroes-elite-trainer-box-jp",
+      "variants": [
+        { "id": 13, "title": "Default Title", "price": "1799.00", "available": false }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Pitch Black Booster Box",
+      "handle": "pitch-black-booster-box",
+      "variants": [
+        { "id": 14, "title": "Default Title", "price": "1799.00", "available": true }
+      ]
+    }
+  ]
+}
