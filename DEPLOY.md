@@ -57,12 +57,29 @@ The app creates its tables automatically on first connect — nothing to run.
    ```toml
    DATABASE_URL = "postgresql://postgres:YOURPASS@db.xxxx.supabase.co:5432/postgres?sslmode=require"
    APP_PASSWORD = "a-shared-password-for-the-three-of-you"
+   # Optional (v0.2) — Discord ping when a product newly flips to BUY:
+   DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/XXXX/YYYY"
    ```
 
 4. **Deploy**. In ~a minute you get a URL like
    `https://kort-og-godt.streamlit.app`.
 
 Share the URL + the password with the other two. Done — same data for all.
+
+## 3b. Optional: Discord BUY alerts (v0.2)
+
+After any **SCAN**, products that *newly* crossed into **BUY** since the last
+scan are posted to a Discord channel — no cron, it rides the scan. To enable:
+
+1. In your Discord server: **Server Settings → Integrations → Webhooks → New
+   Webhook**, pick the channel, **Copy Webhook URL**.
+2. Add it as the `DISCORD_WEBHOOK_URL` secret (above). Leave it unset to keep
+   alerts off. The URL is a secret — it is read from secrets/env only and is
+   never stored in `watchlist.json`.
+
+Only *newly*-BUY products are posted (the previous BUY set is remembered in the
+shared DB), so re-scanning with no change stays quiet. Scheduled/background
+alerts that fire without anyone opening the app are planned for v0.3.
 
 ## 4. Daily use
 
@@ -87,6 +104,9 @@ Share the URL + the password with the other two. Done — same data for all.
   `watchlist.json` and `collection.json` in the repo. After that the DB is the
   source of truth; edit via the app's Config/Collection tabs (or push new JSON
   and clear the `app_config` table to re-seed).
+- **v0.2 upgrade**: no manual database step. On startup the app adds the new
+  `observations.added_by` column to an existing shared DB automatically and
+  idempotently, and creates the new `feedback` table — you just push the code.
 - **Backup**: Supabase has its own backups; you can also use the app's
   *Export markdown report* and *Backup watchlist.json* buttons.
 - **Local/offline** still works: just run `Start Kort og Godt.bat` with no

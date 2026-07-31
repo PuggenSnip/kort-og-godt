@@ -868,3 +868,165 @@ def test_export_markdown_no_crash_when_avg_but_no_today(conn):
     cfg = {"settings": SETTINGS, "products": [make_product()]}
     md = scanner.export_markdown(cfg, conn)          # must not raise
     assert "no verified in-stock price today" in md
+
+
+# ---------------------------------------------------------------------------
+# v0.2 — per-person attribution, migration, CM history, realized reporting,
+# feedback, and Discord alerts
+# ---------------------------------------------------------------------------
+
+def test_manual_cm_entry_records_added_by(conn):
+    p = make_product()
+    scanner.add_manual_cardmarket_entry(conn, p, 100.0, SETTINGS, added_by="Bo")
+    row = scanner._latest_cm_entry(conn, p["id"])
+    assert row["added_by"] == "Bo"
+    assert row["price_native"] == 100.0
+
+
+def test_ensure_columns_retrofits_added_by(tmp_path):
+    # Simulate a pre-v0.2 DB whose observations table lacks `added_by`.
+    import sqlite3
+    p = tmp_path / "old.db"
+    raw = sqlite3.connect(str(p))
+    raw.execute(
+        "CREATE TABLE observations ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER, "
+        "product_id TEXT NOT NULL, shop TEXT NOT NULL, url TEXT, method TEXT, "
+        "title TEXT, observed_at TEXT NOT NULL, price_native FLOAT, "
+        "currency TEXT, price_dkk FLOAT, landed_dkk FLOAT, in_stock INTEGER, "
+        "status TEXT NOT NULL, error TEXT, allocation_risk INTEGER DEFAULT 0, "
+        "reference_only INTEGER DEFAULT 0, source_kind TEXT)")
+    raw.commit()
+    raw.close()
+
+    c = scanner.get_db(p)   # connect(): create_all skips it, _ensure_columns adds col
+    cols = {r["name"] for r in c.execute(
+        "PRAGMA table_info(observations)").fetchall()}
+    assert "added_by" in cols
+    # End-to-end: a manual CM insert now writes added_by on the retrofitted table.
+    scanner.add_manual_cardmarket_entry(
+        c, {"id": "x", "name": "X", "cardmarket": {"url": "u"}}, 10.0,
+        SETTINGS, added_by="Anna")
+    got = c.execute(
+        "SELECT added_by FROM observations WHERE product_id = 'x'").fetchone()
+    assert got["added_by"] == "Anna"
+    c.close()
+    # Idempotent: reconnecting neither errors nor duplicates the column.
+    c2 = scanner.get_db(p)
+    cols2 = [r["name"] for r in c2.execute(
+        "PRAGMA table_info(observations)").fetchall()]
+    assert cols2.count("added_by") == 1
+    c2.close()
+
+
+def test_value_collection_per_person(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1600)
+    cfg = {"settings": SETTINGS, "products": [make_product()]}
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Held-Anna", "product_id": "test-product",
+         "quantity": 1, "unit_cost_dkk": 1500, "added_by": "Anna"},
+        {"id": "h2", "name": "Sold-Bo", "product_id": None, "quantity": 2,
+         "unit_cost_dkk": 1000, "sold_price_dkk": 1300,
+         "sold_date": "2026-07-20", "added_by": "Bo"},
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    bp = v["by_person"]
+    assert set(bp) == {"Anna", "Bo"}
+    assert bp["Anna"]["market_value"] == pytest.approx(1600)
+    assert bp["Anna"]["unrealized_pl"] == pytest.approx(100)   # 1600 - 1500
+    assert bp["Anna"]["n_sold"] == 0
+    assert bp["Bo"]["n_items"] == 0            # Bo's only holding is sold
+    assert bp["Bo"]["realized_proceeds"] == pytest.approx(2600)
+    assert bp["Bo"]["realized_pl"] == pytest.approx(600)       # (1300-1000)*2
+
+
+def test_cardmarket_series_manual_only(conn):
+    put(conn, source_kind="manual", currency="EUR", price_native=120,
+        price=895, days_ago=10)
+    put(conn, source_kind="manual", currency="EUR", price_native=100,
+        price=746, days_ago=0)
+    put(conn, shop="shopA", method="epicpanda", price=1500)   # scraped: excluded
+    s = scanner.cardmarket_series(conn, "test-product")
+    assert len(s) == 2
+    assert [p for _, p in s] == [120, 100]     # observed_at order, EUR native
+
+
+def test_realized_roi_and_by_year(conn):
+    cfg = {"settings": SETTINGS, "products": []}
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "a", "name": "A", "quantity": 1, "unit_cost_dkk": 100,
+         "sold_price_dkk": 150, "sold_date": "2025-03-01"},
+        {"id": "b", "name": "B", "quantity": 2, "unit_cost_dkk": 100,
+         "sold_price_dkk": 120, "sold_date": "sold 2026-01-10 to a mate"},
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    by_name = {r["name"]: r for r in v["sold_rows"]}
+    assert by_name["A"]["roi_pct"] == pytest.approx(50.0)   # (150-100)/100
+    assert by_name["A"]["year"] == 2025
+    assert by_name["B"]["roi_pct"] == pytest.approx(20.0)   # (240-200)/200
+    assert by_name["B"]["year"] == 2026                     # parsed from free text
+    rby = v["realized_by_year"]
+    assert set(rby) == {2025, 2026}
+    assert rby[2025]["pl"] == pytest.approx(50)
+    assert rby[2026]["pl"] == pytest.approx(40)             # (120-100)*2
+
+
+def test_sold_year_parsing():
+    assert scanner._sold_year("2025-03-01") == 2025
+    assert scanner._sold_year("solgt 12/2026") == 2026
+    assert scanner._sold_year("") is None
+    assert scanner._sold_year("last week") is None
+    assert scanner._sold_year("9999") is None              # out of sane range
+
+
+def test_export_sales_csv_escapes_and_formats(conn):
+    cfg = {"settings": SETTINGS, "products": []}
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "a", "name": "Booster, Box", "quantity": 1, "unit_cost_dkk": 100,
+         "sold_price_dkk": 150, "sold_date": "2025-03-01", "added_by": "Anna"},
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+    csv = scanner.export_sales_csv(v)
+    lines = csv.strip().splitlines()
+    assert lines[0].startswith("name,quantity,")
+    assert '"Booster, Box"' in lines[1]        # comma-in-name → quoted field
+    assert "Anna" in lines[1]
+    assert "50.00" in lines[1]                 # roi_pct formatted to 2 decimals
+
+
+def test_feedback_roundtrip(conn):
+    scanner.add_feedback(conn, "Anna", "Prices look off", "0.2",
+                         product_id="test-product")
+    fb = scanner.list_feedback(conn)
+    assert len(fb) == 1
+    assert fb[0]["person"] == "Anna"
+    assert fb[0]["message"] == "Prices look off"
+    assert fb[0]["app_version"] == "0.2"
+    assert fb[0]["resolved"] == 0
+
+
+def test_newly_buy_ids_diff():
+    assert scanner.newly_buy_ids(["a", "b", "c"], ["b"]) == ["a", "c"]
+    assert scanner.newly_buy_ids(["a"], ["a"]) == []
+    assert scanner.newly_buy_ids([], ["a"]) == []
+
+
+def test_build_discord_payload():
+    assert scanner.build_discord_payload([]) == {"content": ""}
+    p = scanner.build_discord_payload(
+        [{"name": "Box A", "reason": "cheap now", "url": "http://x"}])
+    assert "Box A" in p["content"]
+    assert "cheap now" in p["content"]
+    assert "http://x" in p["content"]
+
+
+def test_notify_new_buys_persists_and_diffs(conn):
+    buys = [{"id": "p1", "name": "One"}, {"id": "p2", "name": "Two"}]
+    # Empty webhook -> no network; still diffs against the stored set + persists.
+    assert scanner.notify_new_buys(conn, "", buys) == ["p1", "p2"]
+    assert scanner.notify_new_buys(conn, "", buys) == []        # nothing new
+    buys2 = buys + [{"id": "p3", "name": "Three"}]
+    assert scanner.notify_new_buys(conn, "", buys2) == ["p3"]   # only the new one
+    # Dropping out of BUY then back doesn't spuriously resurface others.
+    assert scanner.notify_new_buys(conn, "", [{"id": "p1", "name": "One"}]) == []
+    assert scanner.notify_new_buys(conn, "", buys2) == ["p2", "p3"]

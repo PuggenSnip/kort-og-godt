@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.1"      # beta — bump this as the app matures
+APP_VERSION = "0.2"      # beta — bump this as the app matures
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
 try:
@@ -68,6 +68,33 @@ def _require_login() -> None:
     st.stop()
 
 
+def _require_person(conn, cfg) -> str:
+    """Ask which shared user is here, so holdings and Cardmarket entries can be
+    attributed. Chosen once per session; a new name joins the roster."""
+    if st.session_state.get("_person"):
+        return st.session_state["_person"]
+    people = list(cfg["settings"].get("people", []))
+    st.title("🃏 Kort og Godt")
+    st.caption("Who's using the app? This labels what you add on the shared "
+               "data — pick your name or add it.")
+    ADD_NEW = "➕ Add a new name…"
+    options = (people + [ADD_NEW]) if people else [ADD_NEW]
+    choice = st.selectbox("I am…", options)
+    name = "" if choice == ADD_NEW else choice
+    if choice == ADD_NEW:
+        name = st.text_input("Your name").strip()
+    if st.button("Continue", type="primary"):
+        if not name:
+            st.warning("Pick a name or type a new one.")
+            st.stop()
+        if name not in people:
+            cfg["settings"].setdefault("people", []).append(name)
+            scanner.put_config(conn, cfg)
+        st.session_state["_person"] = name
+        st.rerun()
+    st.stop()
+
+
 @st.cache_resource
 def _db():
     # DATABASE_URL (secrets/env) -> shared Postgres; unset -> local SQLite file.
@@ -78,6 +105,12 @@ _require_login()
 conn = _db()
 cfg = scanner.get_config(conn)
 settings = cfg["settings"]
+person = _require_person(conn, cfg)
+with st.sidebar:
+    st.caption(f"👤 You are **{person}**")
+    if st.button("Switch user"):
+        st.session_state.pop("_person", None)
+        st.rerun()
 
 
 def flash(msg: str) -> None:
@@ -124,6 +157,7 @@ with tab_scan:
         metric_slot = st.empty()
         metric_slot.metric("Last scan", last_scan_display())
 
+    scan_succeeded = False
     if scan_clicked:
         n_sources = sum(
             1 for p in cfg["products"] for s in p.get("sources", [])
@@ -158,6 +192,7 @@ with tab_scan:
                               state="error")
                 observations = []
             else:
+                scan_succeeded = True
                 ok_n = sum(1 for o in observations if o.status == "ok")
                 status.update(
                     label=f"Scan #{scan_id} done — {ok_n}/{len(observations)} "
@@ -225,6 +260,20 @@ with tab_scan:
             f"- **{name}** — {v.reason}"
             + (f"  ·  [open shop]({v.url})" if v.url else "")
             for name, v in buys))
+
+    # Discord ping: after a successful scan, post the products that flipped INTO
+    # BUY since the previous scan. No cron — it rides this SCAN. The webhook is a
+    # secret (DISCORD_WEBHOOK_URL); if unset, notify_new_buys just tracks state.
+    if scan_succeeded:
+        current_buys = [{"id": p["id"], "name": p["name"],
+                         "reason": verdicts[p["id"]].reason,
+                         "url": verdicts[p["id"]].url}
+                        for p in cfg["products"]
+                        if verdicts[p["id"]].code == "BUY"]
+        webhook = _secret("DISCORD_WEBHOOK_URL")
+        new_ids = scanner.notify_new_buys(conn, webhook, current_buys)
+        if new_ids and webhook:
+            st.toast(f"Discord: pinged {len(new_ids)} new BUY(s)")
 
     st.dataframe(
         rows, use_container_width=True, hide_index=True,
@@ -294,6 +343,16 @@ with tab_scan:
             else:
                 st.caption("Sparkline appears after scans on ≥ 2 days.")
 
+            # Cardmarket manual-entry history (EUR, plotted as-entered — the
+            # honest signal, not the EUR_DKK-pegged DKK).
+            cm_hist = scanner.cardmarket_series(conn, product["id"])
+            if len(cm_hist) >= 2:
+                st.caption("Cardmarket manual entries (€)")
+                st.line_chart(
+                    {"Cardmarket €":
+                     {t[:16].replace("T", " "): p for t, p in cm_hist}},
+                    height=160)
+
             # Cardmarket manual entry.
             cm = product.get("cardmarket") or {}
             if cm.get("url"):
@@ -315,20 +374,24 @@ with tab_scan:
                             st.warning("Enter a price above 0 first.")
                         else:
                             scanner.add_manual_cardmarket_entry(
-                                conn, product, float(eur), settings)
+                                conn, product, float(eur), settings,
+                                added_by=person)
                             flash(f"Saved Cardmarket €{eur:g} for "
                                   f"{product['name']} "
                                   f"({scanner.fmt_dkk(eur * scanner.EUR_DKK)})")
                             st.rerun()
                     cm_last = conn.execute(
-                        "SELECT price_native, observed_at FROM observations "
+                        "SELECT price_native, observed_at, added_by "
+                        "FROM observations "
                         "WHERE product_id = :pid AND source_kind = 'manual' "
                         "ORDER BY id DESC LIMIT 1",
                         {"pid": product["id"]}).fetchone()
                     if cm_last:
+                        by = (f" by {cm_last['added_by']}"
+                              if cm_last.get("added_by") else "")
                         st.caption(
                             f"Last entry: €{cm_last['price_native']:g} on "
-                            f"{cm_last['observed_at'].replace('T', ' ')}")
+                            f"{cm_last['observed_at'].replace('T', ' ')}{by}")
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +440,7 @@ with tab_collection:
     def _txt(x):
         return "" if _blank(x) else str(x).strip()
 
-    editor_cols = ["id", "pid", "Item", "Watchlist product", "Qty",
+    editor_cols = ["id", "pid", "Item", "Added by", "Watchlist product", "Qty",
                    "Unit cost (DKK)", "Acquired", "Manual value (DKK)",
                    "Sold price (DKK)", "Sold date", "Notes"]
     editor_rows = []
@@ -386,6 +449,7 @@ with tab_collection:
             "id": h.get("id", ""),
             "pid": h.get("product_id") or "",     # hidden: preserves the link
             "Item": h.get("name", ""),
+            "Added by": h.get("added_by") or "",
             "Watchlist product": id_to_name.get(h.get("product_id"),
                                                 NONE_LABEL),
             "Qty": h.get("quantity", 1),
@@ -406,6 +470,9 @@ with tab_collection:
         column_config={
             "id": None,     # hidden internal key
             "pid": None,    # hidden watchlist-product id (survives display)
+            "Added by": st.column_config.TextColumn(
+                help="Who added this holding. New rows default to you; "
+                     "edit to reassign."),
             "Watchlist product": st.column_config.SelectboxColumn(
                 options=[NONE_LABEL] + list(prod_name_to_id),
                 help="Link to a watchlist product to value it automatically."),
@@ -438,11 +505,17 @@ with tab_collection:
                 continue                                  # skip blank rows
             if not item and pid:
                 item = id_to_name.get(pid, pid)
-            hid = _txt(r.get("id")) or f"h{i}-{abs(hash(item)) % 100000}"
+            orig_id = _txt(r.get("id"))
+            hid = orig_id or f"h{i}-{abs(hash(item)) % 100000}"
+            # New rows (no original id) are attributed to the current user;
+            # existing rows keep whatever the "Added by" cell shows (blank =
+            # legacy/unknown, so a save never claims someone else's holdings).
+            added_by = _txt(r.get("Added by")) or (person if not orig_id else None)
             new_holdings.append({
                 "id": hid,
                 "name": item,
                 "product_id": pid,
+                "added_by": added_by,
                 "quantity": _num(r.get("Qty")) or 0,
                 "unit_cost_dkk": _num(r.get("Unit cost (DKK)")),
                 "acquired": _txt(r.get("Acquired")),
@@ -488,11 +561,39 @@ with tab_collection:
                 "cost, so they count toward Market value but not P/L. Add a "
                 "unit cost to include them.")
 
-        # Per-holding breakdown.
+        # Per-person P/L breakdown (shared deployments). Shown when the data is
+        # actually attributed — a single "(unknown)" bucket adds no signal.
+        bp = val["by_person"]
+        if len(bp) > 1 or (bp and "(unknown)" not in bp):
+            prows = []
+            for name in sorted(bp):
+                b = bp[name]
+                ppct = (b["unrealized_pl"] / b["cost"] * 100) if b["cost"] else None
+                prows.append({
+                    "Person": name,
+                    "Items": b["n_items"],
+                    "Market value": scanner.fmt_dkk(b["market_value"], 0),
+                    "Cost basis": scanner.fmt_dkk(b["cost"], 0),
+                    "Unrealized P/L": scanner.fmt_dkk(b["unrealized_pl"], 0),
+                    "U-ROI": (f"{ppct:+.1f}%" if ppct is not None else "–"),
+                    "Sold": b["n_sold"],
+                    "Realized P/L": scanner.fmt_dkk(b["realized_pl"], 0),
+                })
+            st.markdown("**By person**")
+            st.dataframe(prows, use_container_width=True, hide_index=True)
+
+        # Per-holding breakdown, optionally scoped to one person ("just me").
+        present = sorted({(r.added_by or "(unknown)") for r in val["rows"]})
+        who = st.selectbox("Show holdings for", ["Everyone"] + present,
+                           key="hold_filter")
+        shown = (val["rows"] if who == "Everyone"
+                 else [r for r in val["rows"]
+                       if (r.added_by or "(unknown)") == who])
         hrows = []
-        for r in val["rows"]:
+        for r in shown:
             hrows.append({
                 "Item": r.name,
+                "Added by": r.added_by or "–",
                 "Qty": r.quantity,
                 "Unit value": (scanner.fmt_dkk(r.unit_value_dkk)
                                if r.unit_value_dkk is not None else "UNVERIFIED"),
@@ -522,15 +623,49 @@ with tab_collection:
         for s in val["sold_rows"]:
             srows.append({
                 "Item": s["name"], "Qty": s["quantity"],
+                "Added by": s.get("added_by") or "–",
                 "Unit cost": (scanner.fmt_dkk(s["unit_cost_dkk"])
                               if s["unit_cost_dkk"] is not None else "–"),
                 "Sold @": scanner.fmt_dkk(s["sold_price_dkk"]),
                 "Proceeds": scanner.fmt_dkk(s["proceeds"]),
                 "Realized P/L": (scanner.fmt_dkk(s["realized_pl"])
                                  if s["realized_pl"] is not None else "–"),
+                "ROI": (f"{s['roi_pct']:+.1f}%"
+                        if s.get("roi_pct") is not None else "–"),
                 "Sold date": s["sold_date"] or "–",
             })
         st.dataframe(srows, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "📄 Export sales CSV",
+            data=scanner.export_sales_csv(val),
+            file_name=f"kortoggodt-sales-{datetime.now():%Y-%m-%d}.csv",
+            mime="text/csv")
+
+        # Realized rolled up by calendar year (numeric years first, then any
+        # unparseable-date sales under "unknown").
+        rby = val["realized_by_year"]
+        if rby:
+            keys = sorted(k for k in rby if k != "unknown")
+            if "unknown" in rby:
+                keys.append("unknown")
+            yrows = []
+            for k in keys:
+                yb = rby[k]
+                ypct = (yb["pl"] / yb["cost"] * 100) if yb["cost"] else None
+                yrows.append({
+                    "Year": str(k),
+                    "Sold": yb["n"],
+                    "Proceeds": scanner.fmt_dkk(yb["proceeds"], 0),
+                    "Cost": scanner.fmt_dkk(yb["cost"], 0),
+                    "Realized P/L": scanner.fmt_dkk(yb["pl"], 0),
+                    "ROI": (f"{ypct:+.1f}%" if ypct is not None else "–"),
+                })
+            st.markdown("**Realized by year**")
+            st.dataframe(yrows, use_container_width=True, hide_index=True)
+            year_pl = {str(k): rby[k]["pl"] for k in keys if k != "unknown"}
+            if year_pl:
+                st.bar_chart({"Realized P/L (DKK)": year_pl}, height=200)
 
     # -- Value over time ----------------------------------------------------
     st.subheader("Value over time")
@@ -667,3 +802,26 @@ with tab_config:
                            data=json.dumps(cfg, ensure_ascii=False, indent=2),
                            file_name="watchlist-backup.json",
                            mime="application/json")
+
+    # -- Report an issue ----------------------------------------------------
+    st.subheader("Report an issue")
+    st.caption("Spotted a bug or want a change? Send it — it's saved to the "
+               "shared database for the maintainer.")
+    with st.form("feedback_form", clear_on_submit=True):
+        fb_msg = st.text_area("What happened / what would you like?",
+                              height=100, key="fb_msg")
+        if st.form_submit_button("Send report"):
+            if fb_msg.strip():
+                scanner.add_feedback(conn, person, fb_msg.strip(), APP_VERSION)
+                flash("Thanks — your report was saved.")
+                st.rerun()
+            else:
+                st.warning("Write a message first.")
+    fb = scanner.list_feedback(conn)
+    if fb:
+        with st.expander(f"📮 Reported issues ({len(fb)})"):
+            for f_ in fb:
+                who = f_["person"] or "anon"
+                when = (f_["created_at"] or "").replace("T", " ")
+                st.markdown(f"- **{who}** · {when} · v{f_['app_version'] or '?'}"
+                            f"\n\n    {f_['message']}")

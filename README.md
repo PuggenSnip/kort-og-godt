@@ -37,10 +37,27 @@ several people on different PCs see the **same live data**, deploy it once to
 Streamlit Community Cloud with a shared Postgres database — everyone opens one
 URL, and the data (scans, Cardmarket entries, collection, config) is shared.
 Set `DATABASE_URL` (shared Postgres) and `APP_PASSWORD` (shared login) as
-secrets; leave them unset for local single-user use. Full step-by-step in
-**[DEPLOY.md](DEPLOY.md)**.
+secrets; leave them unset for local single-user use. Optionally set
+`DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
+after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
-## What's new (Beta)
+## What's new in v0.2 — shared-first
+
+- **Per-person attribution** — a lightweight "who are you?" name picker on
+  entry (no passwords). Holdings and manual Cardmarket entries are stamped with
+  who added them, and the Collection tab shows a **per-person P/L** breakdown
+  plus an *Everyone / just me* filter.
+- **Cardmarket price-history chart** — each product expander plots your manual
+  Cardmarket entries over time (in €).
+- **Richer realized (sold) reporting** — per-sale **ROI %**, a **by-year**
+  roll-up with a chart, and a **CSV export** of your sales.
+- **Discord alerts (no cron)** — after a SCAN, products that *newly* flipped to
+  BUY are posted to a Discord webhook. Set `DISCORD_WEBHOOK_URL` as a secret to
+  enable; unset = off. (Scheduled/background alerts are planned for v0.3.)
+- **Report an issue** — a small form in the Config tab saves feedback to the
+  shared database for the maintainer.
+
+## Earlier (v0.1 beta)
 
 - **Collection / portfolio tracking** — value what you own from live prices,
   cost basis, **unrealized P/L**, and **realized P/L** on items you've sold,
@@ -137,6 +154,12 @@ The **🎴 Collection** tab tracks what you own and its value:
 - **Value over time**: a snapshot of the collection's value is recorded
   automatically after every scan (one point per day; there's also a manual
   *Snapshot value now* button), charted as market value vs cost basis.
+- **Per-person (v0.2)**: on a shared deployment each holding is stamped with
+  who added it. A *By person* table breaks down market value, cost, and both
+  unrealized and realized P/L per person, and an *Everyone / just me* filter
+  scopes the holdings table. Legacy holdings with no owner show as *(unknown)*.
+- **Realized reporting (v0.2)**: the *Realized (sold)* section adds per-sale
+  **ROI %**, a **by-year** roll-up with a P/L bar chart, and a **CSV export**.
 - The markdown export includes a collection summary.
 
 Holdings live in `collection.json` (editable/backup-able); the value history

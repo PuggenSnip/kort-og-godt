@@ -51,6 +51,9 @@ DEFAULT_SETTINGS = {
     # it stops driving a BUY and is shown as a note instead (manual entries,
     # unlike scraped ones, never auto-refresh to UNVERIFIED).
     "cardmarket_max_age_days": 30,
+    # Roster of people sharing this deployment. Names are added from the UI's
+    # "who are you?" step and attributed onto holdings and Cardmarket entries.
+    "people": [],
 }
 
 
@@ -700,6 +703,7 @@ class Observation:
     allocation_risk: bool = False
     reference_only: bool = False
     source_kind: str = "html"
+    added_by: Optional[str] = None      # who entered a manual row; None if scraped
 
 
 def _to_dkk(amount: float, currency: str, settings: dict) -> float:
@@ -860,11 +864,11 @@ def insert_observation(conn: Database, obs: Observation,
         """INSERT INTO observations
            (scan_id, product_id, shop, url, method, title, observed_at,
             price_native, currency, price_dkk, landed_dkk, in_stock, status,
-            error, allocation_risk, reference_only, source_kind)
+            error, allocation_risk, reference_only, source_kind, added_by)
            VALUES (:scan_id, :product_id, :shop, :url, :method, :title,
             :observed_at, :price_native, :currency, :price_dkk, :landed_dkk,
             :in_stock, :status, :error, :allocation_risk, :reference_only,
-            :source_kind)""",
+            :source_kind, :added_by)""",
         {"scan_id": scan_id, "product_id": obs.product_id, "shop": obs.shop,
          "url": obs.url, "method": obs.method, "title": obs.title,
          "observed_at": obs.observed_at, "price_native": obs.price_native,
@@ -874,12 +878,17 @@ def insert_observation(conn: Database, obs: Observation,
          "status": obs.status, "error": obs.error,
          "allocation_risk": int(obs.allocation_risk),
          "reference_only": int(obs.reference_only),
-         "source_kind": obs.source_kind})
+         "source_kind": obs.source_kind, "added_by": obs.added_by})
 
 
 def add_manual_cardmarket_entry(conn: Database, product: dict,
-                                price_eur: float, settings: dict) -> Observation:
-    """Store a manually entered Cardmarket price like scraped data."""
+                                price_eur: float, settings: dict,
+                                added_by: Optional[str] = None) -> Observation:
+    """Store a manually entered Cardmarket price like scraped data.
+
+    `added_by` (a person's name) is recorded for shared deployments so the
+    collection can show who entered each price; None for single-user runs.
+    """
     cm = product.get("cardmarket", {})
     shipping = float(cm.get("shipping_dkk", 0))
     obs = Observation(
@@ -887,7 +896,7 @@ def add_manual_cardmarket_entry(conn: Database, product: dict,
         method="cardmarket_manual", observed_at=now_iso(),
         title=product["name"], price_native=price_eur, currency="EUR",
         price_dkk=price_eur * EUR_DKK, landed_dkk=price_eur * EUR_DKK + shipping,
-        in_stock=True, status="ok", source_kind="manual")
+        in_stock=True, status="ok", source_kind="manual", added_by=added_by)
     insert_observation(conn, obs, scan_id=None)
     return obs
 
@@ -989,6 +998,26 @@ def shop_series(conn: Database, product_id: str,
     for r in rows:
         out.setdefault(r["shop"], []).append((r["day"], r["price"]))
     return out
+
+
+def cardmarket_series(conn: Database, product_id: str,
+                      days: int = 365) -> list[tuple[str, float]]:
+    """Manually-entered Cardmarket prices over time, as (timestamp, EUR).
+
+    The inverse of daily_cheapest_series: ONLY manual Cardmarket entries
+    (source_kind='manual'), plotted as-entered rather than grouped per day —
+    CM entries are sporadic, so a per-day MIN would manufacture phantom trends
+    (see daily_cheapest_series). price_native is the honest signal: the EUR the
+    user actually typed, not the EUR_DKK-pegged derived DKK.
+    """
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = conn.execute(
+        """SELECT observed_at, price_native FROM observations
+           WHERE product_id = :pid AND source_kind = 'manual' AND status = 'ok'
+             AND price_native IS NOT NULL AND observed_at >= :since
+           ORDER BY observed_at""",
+        {"pid": product_id, "since": since}).fetchall()
+    return [(r["observed_at"], r["price_native"]) for r in rows]
 
 
 @dataclass
@@ -1447,6 +1476,7 @@ class HoldingValue:
     value_source: str
     observed_at: Optional[str]
     status: str                        # "valued" | "unverified"
+    added_by: Optional[str] = None     # who added the holding (shared use)
 
     @property
     def line_value(self) -> Optional[float]:
@@ -1494,7 +1524,7 @@ def value_holding(conn: Database, holding: dict,
     return HoldingValue(name=name, quantity=qty, unit_cost_dkk=unit_cost,
                         unit_value_dkk=value,
                         value_source=source or "", observed_at=seen,
-                        status=status)
+                        status=status, added_by=holding.get("added_by") or None)
 
 
 def _holding_is_sold(h: dict) -> bool:
@@ -1503,6 +1533,21 @@ def _holding_is_sold(h: dict) -> bool:
         return sp not in (None, "") and float(sp) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _sold_year(sold_date: str) -> Optional[int]:
+    """Best-effort calendar year from the free-text `sold_date` (None on junk)."""
+    m = re.search(r"\b(\d{4})\b", sold_date or "")
+    if not m:
+        return None
+    year = int(m.group(1))
+    return year if 1990 <= year <= 2100 else None
+
+
+def _empty_person_bucket() -> dict:
+    return {"n_items": 0, "n_valued": 0, "market_value": 0.0, "cost": 0.0,
+            "unrealized_pl": 0.0, "n_sold": 0, "realized_proceeds": 0.0,
+            "realized_cost": 0.0, "realized_pl": 0.0}
 
 
 def value_collection(conn: Database, cfg: dict, collection: dict,
@@ -1552,11 +1597,18 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
         sold_price = float(h["sold_price_dkk"])
         proceeds = sold_price * qty
         realized = (proceeds - unit_cost * qty) if unit_cost is not None else None
+        cost_basis = unit_cost * qty if unit_cost is not None else None
+        # cost_basis truthiness also guards divide-by-zero (a 0-cost sale).
+        roi_pct = (realized / cost_basis * 100.0
+                   if cost_basis and realized is not None else None)
+        sold_date = h.get("sold_date") or ""
         sold_rows.append({
             "name": h.get("name") or h.get("product_id") or "(unnamed)",
             "quantity": qty, "unit_cost_dkk": unit_cost,
             "sold_price_dkk": sold_price, "proceeds": proceeds,
-            "realized_pl": realized, "sold_date": h.get("sold_date") or "",
+            "realized_pl": realized, "sold_date": sold_date,
+            "roi_pct": roi_pct, "year": _sold_year(sold_date),
+            "added_by": h.get("added_by") or None,
         })
     realized_proceeds = sum(r["proceeds"] for r in sold_rows)
     # P/L and its cost basis only cover sold rows that have a recorded cost —
@@ -1564,6 +1616,39 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
     with_cost = [r for r in sold_rows if r["unit_cost_dkk"] is not None]
     realized_cost = sum(r["unit_cost_dkk"] * r["quantity"] for r in with_cost)
     realized_pl = sum(r["realized_pl"] for r in with_cost)
+
+    # Per-person breakdown for shared deployments: the same unrealized/realized
+    # aggregates, bucketed by who added each holding. Unattributed → "(unknown)".
+    by_person: dict[str, dict] = {}
+    for r in rows:
+        b = by_person.setdefault(r.added_by or "(unknown)", _empty_person_bucket())
+        b["n_items"] += 1
+        if r.status == "valued":
+            b["n_valued"] += 1
+            b["market_value"] += r.line_value
+            if r.line_cost is not None:
+                b["cost"] += r.line_cost
+                b["unrealized_pl"] += r.line_pl
+    for sr in sold_rows:
+        b = by_person.setdefault(sr["added_by"] or "(unknown)",
+                                 _empty_person_bucket())
+        b["n_sold"] += 1
+        b["realized_proceeds"] += sr["proceeds"]
+        if sr["unit_cost_dkk"] is not None:
+            b["realized_cost"] += sr["unit_cost_dkk"] * sr["quantity"]
+            b["realized_pl"] += sr["realized_pl"]
+
+    # Realized P/L rolled up by calendar year (unparseable dates → "unknown").
+    realized_by_year: dict = {}
+    for sr in sold_rows:
+        key = sr["year"] if sr["year"] is not None else "unknown"
+        yb = realized_by_year.setdefault(
+            key, {"proceeds": 0.0, "cost": 0.0, "pl": 0.0, "n": 0})
+        yb["n"] += 1
+        yb["proceeds"] += sr["proceeds"]
+        if sr["unit_cost_dkk"] is not None:
+            yb["cost"] += sr["unit_cost_dkk"] * sr["quantity"]
+            yb["pl"] += sr["realized_pl"]
 
     return {
         "rows": rows, "basis": basis,
@@ -1580,6 +1665,8 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
         "realized_proceeds": realized_proceeds,
         "realized_cost": realized_cost,
         "realized_pl": realized_pl,
+        "by_person": by_person,
+        "realized_by_year": realized_by_year,
     }
 
 
@@ -1616,3 +1703,138 @@ def collection_value_series(conn: Database,
            WHERE substr(s.taken_at,1,10) >= :since
            ORDER BY s.taken_at""", {"since": since}).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Realized-sales CSV export
+# ---------------------------------------------------------------------------
+
+def _csv_escape(s: str) -> str:
+    """Minimal RFC-4180 escaping so names/dates with commas stay one field."""
+    if any(ch in s for ch in (",", '"', "\n", "\r")):
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+def export_sales_csv(val: dict) -> str:
+    """CSV of realized (sold) holdings from a value_collection() result.
+
+    Pure string builder (mirrors export_markdown) — the caller feeds it to a
+    Streamlit download_button. One header row plus one row per sold holding.
+    """
+    cols = ["name", "quantity", "unit_cost_dkk", "sold_price_dkk", "proceeds",
+            "realized_pl", "roi_pct", "sold_date", "year", "added_by"]
+    lines = [",".join(cols)]
+    for r in val.get("sold_rows", []):
+        cells = []
+        for c in cols:
+            v = r.get(c)
+            if v is None:
+                cells.append("")
+            elif isinstance(v, float):
+                cells.append(f"{v:.2f}")
+            else:
+                cells.append(_csv_escape(str(v)))
+        lines.append(",".join(cells))
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Report-an-issue feedback store
+# ---------------------------------------------------------------------------
+
+def add_feedback(conn: Database, person: Optional[str], message: str,
+                 app_version: str = "",
+                 product_id: Optional[str] = None) -> None:
+    """Store an in-app 'report an issue' message in the shared feedback table."""
+    conn.execute(
+        """INSERT INTO feedback
+           (created_at, person, message, app_version, product_id, resolved)
+           VALUES (:created_at, :person, :message, :app_version,
+                   :product_id, 0)""",
+        {"created_at": now_iso(), "person": person, "message": message,
+         "app_version": app_version, "product_id": product_id})
+
+
+def list_feedback(conn: Database, include_resolved: bool = True) -> list[dict]:
+    """Feedback entries, newest first."""
+    where = "" if include_resolved else "WHERE resolved = 0"
+    return conn.execute(
+        f"SELECT * FROM feedback {where} ORDER BY id DESC").fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Discord alerts — app-triggered (no scheduler). Fired after a manual SCAN:
+# products that flipped INTO the BUY set since the previous scan are posted to
+# a Discord webhook. The previous BUY set lives in app_config['last_buy_set'].
+# ---------------------------------------------------------------------------
+
+def get_last_buy_set(conn: Database) -> set:
+    """Product ids that were BUY at the previous scan (empty on first run)."""
+    row = conn.execute(
+        "SELECT value FROM app_config WHERE key = 'last_buy_set'").fetchone()
+    if not row or not row["value"]:
+        return set()
+    try:
+        return set(json.loads(row["value"]))
+    except (ValueError, TypeError):
+        return set()
+
+
+def put_last_buy_set(conn: Database, ids) -> None:
+    _put_kv(conn, "last_buy_set", sorted(set(ids)))
+
+
+def newly_buy_ids(current, previous) -> list:
+    """Ids that are BUY now but weren't before — pure set diff, no DB/network."""
+    return sorted(set(current) - set(previous))
+
+
+def build_discord_payload(buys: list) -> dict:
+    """Discord webhook JSON for newly-flipped BUY products.
+
+    `buys`: list of {"name", "reason"(opt), "url"(opt)}. Pure — no network —
+    so it is trivially unit-testable. Mirrors the app's 'Act now — BUY' text.
+    """
+    if not buys:
+        return {"content": ""}
+    lines = ["\U0001F7E2 **Kort og Godt — new BUY signal(s)**"]
+    for b in buys:
+        reason = b.get("reason") or ""
+        line = f"• **{b['name']}**" + (f" — {reason}" if reason else "")
+        if b.get("url"):
+            line += f"  <{b['url']}>"
+        lines.append(line)
+    return {"content": "\n".join(lines)}
+
+
+def post_discord(webhook_url: str, payload: dict) -> bool:
+    """POST a payload to a Discord webhook. Returns True on a 2xx.
+
+    Guarded: any failure (network, bad URL, non-2xx) is swallowed and returns
+    False — a scan must never break because Discord is unreachable.
+    """
+    if not webhook_url or not payload.get("content"):
+        return False
+    try:
+        resp = httpx.post(webhook_url, json=payload, timeout=10)
+        return resp.status_code < 300
+    except Exception:       # noqa: BLE001 — alerts are best-effort
+        return False
+
+
+def notify_new_buys(conn: Database, webhook_url: Optional[str],
+                    current_buys: list) -> list:
+    """Diff current BUYs against the stored set, ping the new ones, persist.
+
+    `current_buys`: list of {"id", "name", "reason"(opt), "url"(opt)}.
+    Returns the newly-BUY ids. Persists the current set even when no webhook is
+    configured, so enabling Discord later doesn't replay the whole existing set.
+    """
+    current_ids = [b["id"] for b in current_buys]
+    new_ids = newly_buy_ids(current_ids, get_last_buy_set(conn))
+    if webhook_url and new_ids:
+        fresh = [b for b in current_buys if b["id"] in set(new_ids)]
+        post_discord(webhook_url, build_discord_payload(fresh))
+    put_last_buy_set(conn, current_ids)
+    return new_ids

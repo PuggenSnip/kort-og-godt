@@ -50,6 +50,9 @@ observations = Table(
     Column("allocation_risk", Integer, default=0),
     Column("reference_only", Integer, default=0),
     Column("source_kind", Text),
+    # Who entered this row (manual Cardmarket entries). NULL for scraped rows.
+    # Retrofitted onto existing DBs by _ensure_columns() — see connect().
+    Column("added_by", Text),
 )
 http_cache = Table(
     "http_cache", metadata,
@@ -74,6 +77,16 @@ app_config = Table(
     "app_config", metadata,
     Column("key", Text, primary_key=True),
     Column("value", Text),
+)
+feedback = Table(
+    "feedback", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("created_at", Text, nullable=False),
+    Column("person", Text),
+    Column("message", Text, nullable=False),
+    Column("app_version", Text),
+    Column("product_id", Text),
+    Column("resolved", Integer, default=0),
 )
 
 
@@ -129,6 +142,30 @@ class Database:
         self.engine.dispose()
 
 
+def _ensure_columns(engine: Engine) -> None:
+    """Retrofit columns that create_all() can't add to an existing table.
+
+    ``metadata.create_all`` only issues CREATE TABLE for missing tables; it
+    never diffs columns or ALTERs an existing one. The shared Postgres DB (and
+    any SQLite file) created before v0.2 has an ``observations`` table without
+    ``added_by``, so add it idempotently on both dialects. Safe to run every
+    startup — a fresh DB already has the column and this becomes a no-op.
+    """
+    is_postgres = engine.dialect.name == "postgresql"
+    with engine.begin() as conn:
+        if is_postgres:
+            conn.execute(text(
+                "ALTER TABLE observations "
+                "ADD COLUMN IF NOT EXISTS added_by TEXT"))
+        else:
+            # SQLite has no ADD COLUMN IF NOT EXISTS — check first.
+            existing = {row[1] for row in conn.execute(
+                text("PRAGMA table_info(observations)")).fetchall()}
+            if "added_by" not in existing:
+                conn.execute(text(
+                    "ALTER TABLE observations ADD COLUMN added_by TEXT"))
+
+
 def connect(url=None) -> Database:
     resolved = _to_url(url)
     connect_args = {"check_same_thread": False} \
@@ -136,4 +173,5 @@ def connect(url=None) -> Database:
     engine = create_engine(resolved, connect_args=connect_args,
                            pool_pre_ping=True, future=True)
     metadata.create_all(engine)
+    _ensure_columns(engine)
     return Database(engine)

@@ -33,6 +33,19 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.2 (delt brug)
+----------------------
+- Når du åbner programmet, bliver du spurgt "Hvem bruger appen?" –
+  vælg dit navn (eller skriv et nyt). Så kan I se, hvem der har
+  tilføjet hvad i den delte samling, og få gevinst/tab pr. person.
+- Cardmarket-priser du taster ind bliver nu vist som en graf over tid.
+- Solgte varer får ROI %, opdeling pr. år og en CSV-eksport.
+- Ny knap "Report an issue" (under Config) sender fejl/ønsker til
+  den delte database.
+- Valgfrit: en Discord-besked når et produkt lige er blevet til KØB
+  efter en scanning (ejeren sætter det op – se DEPLOY.md).
+
+
 HAR DU BRUG FOR HJÆLP?
 ----------------------
 Se den medfølgende PDF:  "Kort og Godt - Brugervejledning.pdf".
