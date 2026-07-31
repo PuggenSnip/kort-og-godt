@@ -16,6 +16,8 @@ import streamlit as st
 
 import scanner
 
+APP_VERSION = "0.1"      # beta — bump this as the app matures
+
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
 try:
     from PIL import Image as _PILImage
@@ -91,6 +93,10 @@ def last_scan_display() -> str:
 
 
 st.title("🃏 Kort og Godt")
+st.markdown(
+    f"<div style='color:#B8912E;font-size:0.8rem;font-weight:600;"
+    f"margin-top:-10px;margin-bottom:4px'>v{APP_VERSION} · beta</div>",
+    unsafe_allow_html=True)
 st.caption(
     "Local TCG sealed-price scanner — read-only, polite (1 req/s/domain, "
     "1 h cache, robots.txt respected). eBay is skipped in v1: needs API keys, "

@@ -1,0 +1,45 @@
+========================================
+  KORT OG GODT  –  Læs mig først
+========================================
+
+Kort og Godt er en prisscanner og samlingsoversigt til forseglede
+TCG-produkter (Pokémon, Magic m.fl.). Programmet KØBER aldrig noget –
+det henter kun priser og fortæller dig KØB / VENT / UNDGÅ.
+
+
+SÅDAN INSTALLERER DU (det klarer alt selv)
+------------------------------------------
+1. Pak denne mappe ud (hvis den stadig er en ZIP).
+
+2. Dobbeltklik på filen:   Installer Kort og Godt.bat
+
+   - Installeren henter og installerer selv alt, der skal bruges
+     (også Python, hvis du ikke har det). Det kræver INTET af dig.
+   - Første gang kan det tage nogle minutter. Bare vent.
+   - Windows kan vise en advarsel "Windows beskyttede din pc" –
+     klik "Flere oplysninger" og derefter "Kør alligevel".
+
+3. Når den er færdig, ligger der en genvej "Kort og Godt" på dit
+   skrivebord. Dobbeltklik den for at starte programmet. Det åbner
+   i din browser og viser de DELTE data, som I alle bruger.
+
+Det var det – du skal ikke gøre andet.
+
+
+OPDATERINGER (sker helt automatisk)
+-----------------------------------
+Hver gang du starter programmet, henter det selv den nyeste version.
+Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
+som du plejer, så er du altid på den nyeste udgave.
+
+
+HAR DU BRUG FOR HJÆLP?
+----------------------
+Se den medfølgende PDF:  "Kort og Godt - Brugervejledning.pdf".
+
+Du kan også altid bruge programmet i browseren – helt uden
+installation – på:  https://kort-og-godt.streamlit.app
+(spørg om adgangskoden). Det er de samme delte data.
+
+
+God jagt!

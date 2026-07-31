@@ -11,6 +11,9 @@ kortoggodt.db
 # Secrets — NEVER commit these (contains DB URL + password)
 .streamlit/secrets.toml
 
+# Distribution ZIPs — the friend package contains the DB connection; never commit
+*.zip
+
 # Recorded live HTTP fixtures (machine-specific; regenerated on scan)
 fixtures/live/
 
