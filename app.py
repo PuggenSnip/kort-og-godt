@@ -130,12 +130,6 @@ st.markdown(
     f"<div style='color:#B8912E;font-size:0.8rem;font-weight:600;"
     f"margin-top:-10px;margin-bottom:4px'>v{APP_VERSION} · beta</div>",
     unsafe_allow_html=True)
-st.caption(
-    "Local TCG sealed-price scanner — read-only, polite (1 req/s/domain, "
-    "1 h cache, robots.txt respected). eBay is skipped in v1: needs API keys, "
-    "and non-EU offers are uncompetitive after +25% Danish VAT + ~160 kr fee. "
-    "Cardmarket is never scraped — enter its price manually below."
-)
 
 if "_flash" in st.session_state:
     st.success(st.session_state.pop("_flash"))
