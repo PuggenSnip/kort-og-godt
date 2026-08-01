@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 6,
+    "config_version": 7,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -17,7 +17,9 @@
       "cardx.dk": 45,
       "flinamania.dk": 45,
       "spilforsyningen.dk": 45,
-      "br.dk": 0
+      "br.dk": 0,
+      "rogerz.dk": 45,
+      "andcards.dk": 45
     },
     "preferred_shops": {
       "br.dk": "1 års ombytning på uåbnede varer"
@@ -421,6 +423,233 @@
         "plausible_max_dkk": 1300
       },
       "notes": "Fætter BR (br.dk) is now scanned directly (599 kr, fri fragt > 599) and is PREFERRED on exact price ties: 1 års ombytning på uåbnede varer = downside-hedged venue. symbizon also ships free > 599 kr (both seeded 0). BR was out of stock online on 2026-08-01 — physical BR stores may still have it."
+    },
+    {
+      "id": "chaos-rising-etb-en",
+      "name": "Pokémon Chaos Rising ETB EN",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-chaos-rising-elite-trainer-box",
+          "ref_price_2026_08_01": 699
+        },
+        {
+          "shop": "andcards.dk",
+          "method": "jsonld_product",
+          "url": "https://www.andcards.dk/vare/pokemon-tcg-chaos-rising-elite-trainer-box/",
+          "query": "chaos rising elite trainer",
+          "ref_price_2026_08_01": 699
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 650,
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 1500
+      },
+      "notes": "MD#28: BUY ≤650. Two live DK sources (rogerz + andcards)."
+    },
+    {
+      "id": "chaos-rising-booster-box-en",
+      "name": "Pokémon Chaos Rising Booster Box EN",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-chaos-rising-booster-box",
+          "ref_price_2026_08_01": 1999
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1600,
+        "plausible_min_dkk": 900,
+        "plausible_max_dkk": 3200
+      },
+      "notes": "MD#30: BUY ≤1600 kr."
+    },
+    {
+      "id": "perfect-order-booster-box-en",
+      "name": "Pokémon Perfect Order Booster Box EN",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-perfect-order-booster-box",
+          "ref_price_2026_08_01": 1799
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1500,
+        "plausible_min_dkk": 900,
+        "plausible_max_dkk": 3000
+      },
+      "notes": "MD#29: BUY ≤1500. SealedValue models it below MSRP — conflicting data, verify."
+    },
+    {
+      "id": "phantasmal-flames-etb-en",
+      "name": "Pokémon Phantasmal Flames ETB EN",
+      "sources": [
+        {
+          "shop": "andcards.dk",
+          "method": "jsonld_product",
+          "url": "https://www.andcards.dk/vare/pok%C3%A9mon-tcg-phantasmal-flames-elite-trainer-box/",
+          "query": "phantasmal flames elite trainer",
+          "ref_price_2026_08_01": 1299
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1000,
+        "avoid_above_dkk": 1300,
+        "plausible_min_dkk": 500,
+        "plausible_max_dkk": 2500
+      },
+      "notes": "MD#31: only ≤1000 (currently ~3× MSRP, SELL signals)."
+    },
+    {
+      "id": "pitch-black-booster-bundle-en",
+      "name": "Pokémon Pitch Black Booster Bundle EN",
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-booster-pakke-me05-mega-evolution-pitch-black-booster-pack-bundle-box-medboosters-p-378365.html",
+          "query": "pitch black bundle",
+          "ref_price_2026_08_01": 334.95
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 340,
+        "plausible_min_dkk": 150,
+        "plausible_max_dkk": 700
+      },
+      "notes": "MD#32: RIP best-value (~55 kr/pack). Sealed 6-pack bundle box, not the case."
+    },
+    {
+      "id": "ascended-heroes-booster-bundle-en",
+      "name": "Pokémon Ascended Heroes Booster Bundle EN",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/ascended-heroes-booster-bundle",
+          "ref_price_2026_08_01": 759
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 775,
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 1500
+      },
+      "notes": "MD#33: BUY ≤775 (best ME-era odds: SIR 1/70, God Pack ~1/950). The 6-pack bundle, not the display/case."
+    },
+    {
+      "id": "mega-brave-jp-booster-box",
+      "name": "Pokémon Mega Brave JP Booster Box",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-mega-brave-booster-box-japansk-onesize-standard",
+          "ref_price_2026_08_01": 999
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 900,
+        "plausible_min_dkk": 500,
+        "plausible_max_dkk": 2000
+      },
+      "notes": "MD#18: BUY ≤900 (US ~$135; Mega Lucario MUR + Lillie SAR)."
+    },
+    {
+      "id": "abyss-eye-jp-booster-box",
+      "name": "Pokémon Abyss Eye JP Booster Box",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-abyss-eye-booster-box-japansk-mega-evolution",
+          "ref_price_2026_08_01": 995
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 900,
+        "plausible_min_dkk": 500,
+        "plausible_max_dkk": 2000
+      },
+      "notes": "MD#22: BUY ≤900. Japanese Abyss Eye (M5) = JP counterpart of EN Pitch Black."
+    },
+    {
+      "id": "nihil-zero-jp-booster-box",
+      "name": "Pokémon Nihil Zero JP Booster Box",
+      "sources": [
+        {
+          "shop": "andcards.dk",
+          "method": "jsonld_product",
+          "url": "https://www.andcards.dk/vare/nihil-zero-booster-box-japansk/",
+          "query": "nihil zero",
+          "ref_price_2026_08_01": 599
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 600,
+        "plausible_min_dkk": 300,
+        "plausible_max_dkk": 1500
+      },
+      "notes": "MD#23: BUY ≤600 (RIP)."
+    },
+    {
+      "id": "mtg-marvel-play-booster-box",
+      "name": "MTG Marvel Super Heroes Play Booster Box",
+      "sources": [
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/magic-the-gathering-marvel-super-heroes-play-booster-box",
+          "ref_price_2026_08_01": 899
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 700,
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 1800
+      },
+      "notes": "MD#40: RIP ≤700 only (cheap packs, weak EV). The Play box, not Collector/Jumpstart."
+    },
+    {
+      "id": "riftbound-vendetta-display",
+      "name": "Riftbound Vendetta Display",
+      "sources": [
+        {
+          "shop": "cardx.dk",
+          "method": "shopify_handle",
+          "url": "https://cardx.dk/products/riftbound-league-of-legends-tcg-vendetta-booster-box",
+          "ref_price_2026_08_01": 1045
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1100,
+        "plausible_min_dkk": 600,
+        "plausible_max_dkk": 2200
+      },
+      "notes": "MD#47: RIP ≤1100, never as investment. Often sold out — scanner reports honest OOS."
+    },
+    {
+      "id": "mtg-hobbit-collector-booster-box",
+      "name": "MTG Hobbit Collector Booster Box",
+      "sources": [
+        {
+          "shop": "spilforsyningen.dk",
+          "method": "shopify_handle",
+          "url": "https://spilforsyningen.dk/products/magic-the-gathering-the-hobbit-collector-booster-display",
+          "ref_price_2026_08_01": 5999.95
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 4000,
+        "plausible_min_dkk": 2500,
+        "plausible_max_dkk": 8000
+      },
+      "notes": "MD#39: BUY ≤4000 post-release (Tolkien premium real; ~5.999 preorder now)."
     }
   ]
 }

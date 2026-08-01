@@ -33,6 +33,16 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.5 (den store overvaagningsliste)
+-----------------------------------------
+- 12 nye produkter overvaages nu (10 -> 22): bl.a. Chaos Rising,
+  Perfect Order, Phantasmal Flames, Pitch Black + Ascended Heroes
+  Bundles, tre japanske bokse, Marvel Play Box, Riftbound Vendetta
+  og Hobbit Collector Box.
+- To nye danske butikker: rogerz.dk og andcards.dk (ingen ny kode).
+- Alle priser er tjekket live foer de blev tilfoejet - intet gaettet.
+
+
 NYT I v0.4 (appen scanner selv)
 -------------------------------
 - Priserne scannes nu automatisk 4 gange i doegnet - og ved nye

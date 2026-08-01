@@ -49,6 +49,24 @@ secrets; leave them unset for local single-user use. Optionally set
 `DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
 after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
+## What's new in v0.5 — the big watchlist
+
+- **12 new tracked products** (10 → 22), every source validated live through
+  the real scanner before shipping — Chaos Rising ETB + Booster Box, Perfect
+  Order Box, Phantasmal Flames ETB, Pitch Black & Ascended Heroes Booster
+  Bundles, three Japanese boxes (Mega Brave, Abyss Eye, Nihil Zero), Marvel
+  Super Heroes Play Box, Riftbound Vendetta display, and the Hobbit Collector
+  Box. Triggers encode the research targets; plausibility bands seeded on all.
+- **Two new Danish shops, zero new scraper code**: **rogerz.dk** (Shopify →
+  `shopify_handle`) and **andcards.dk** (WooCommerce → the existing
+  `jsonld_product` method). Both checked for geo-pricing (neither is).
+- **Generic JSON-LD parser hardened**: it now reads WooCommerce's
+  `priceSpecification` shape and always takes the **sale** price over a
+  struck-through ListPrice — which is how andcards prices are actually
+  encoded. Makes `jsonld_product` robust for future non-Shopify shops.
+- Sources that didn't check out were **left out, not guessed** (Faraos needs a
+  bespoke parser — deferred; a few Collector boxes were delisted/absent).
+
 ## What's new in v0.4 — the scanner runs itself
 
 - **Scheduled scans + Discord push, no human required.** A GitHub Actions

@@ -127,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 6    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 7    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
@@ -751,6 +751,42 @@ _JSONLD_IN_STOCK = ("instock", "preorder", "presale", "limitedavailability")
 _JSONLD_NO_STOCK = ("outofstock", "soldout", "discontinued")
 
 
+def _jsonld_offer_price(offer: dict) -> tuple[Optional[float], str]:
+    """Current selling price + currency from a schema.org Offer.
+
+    Handles a direct ``offer.price`` / ``offer.lowPrice`` and the WooCommerce
+    shape where price lives in ``offer.priceSpecification[]`` (a list of
+    UnitPriceSpecification). The genuine selling price is the spec WITHOUT a
+    ListPrice priceType (ListPrice is the struck-through 'before' price) — take
+    the lowest such, else the lowest overall. Returns (None, "") if no price.
+    """
+    for key in ("price", "lowPrice"):
+        raw = offer.get(key)
+        if raw is not None:
+            try:
+                return float(raw), str(offer.get("priceCurrency") or "")
+            except (TypeError, ValueError):
+                pass
+    specs = offer.get("priceSpecification")
+    if isinstance(specs, dict):
+        specs = [specs]
+    current, listed = [], []
+    for sp in specs or []:
+        if not isinstance(sp, dict):
+            continue
+        try:
+            val = float(sp.get("price"))
+        except (TypeError, ValueError):
+            continue
+        pair = (val, str(sp.get("priceCurrency") or ""))
+        is_list = "listprice" in str(sp.get("priceType") or "").lower()
+        (listed if is_list else current).append(pair)
+    pool = current or listed
+    if pool:
+        return min(pool, key=lambda t: t[0])
+    return None, ""
+
+
 def parse_jsonld_product(body: str, query_words: Optional[list] = None,
                          expected_currency: str = "DKK") -> ParsedPrice:
     """Parse any product page embedding schema.org JSON-LD Product data
@@ -798,12 +834,10 @@ def parse_jsonld_product(body: str, query_words: Optional[list] = None,
         offers = offers[0] if offers else {}
     if not isinstance(offers, dict):
         return ParsedPrice(title=title, error="no usable JSON-LD offer")
-    raw_price = offers.get("price", offers.get("lowPrice"))
-    try:
-        price = float(raw_price)
-    except (TypeError, ValueError):
+    price, spec_currency = _jsonld_offer_price(offers)
+    if price is None:
         return ParsedPrice(title=title, error="no price in JSON-LD offer")
-    currency = str(offers.get("priceCurrency") or "").upper()
+    currency = str(offers.get("priceCurrency") or spec_currency or "").upper()
     if currency and currency != expected_currency.upper():
         return ParsedPrice(title=title, error=(
             f"JSON-LD priceCurrency {currency} != configured "

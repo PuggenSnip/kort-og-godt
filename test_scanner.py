@@ -1263,6 +1263,25 @@ def test_parse_jsonld_product():
     assert "Pitch Black Elite Trainer Box" in p.title
 
 
+def test_jsonld_pricespecification_sale_over_list():
+    # WooCommerce (andcards.dk) nests price in offers[].priceSpecification[]
+    # with a sale UnitPriceSpecification + a struck-through ListPrice. We must
+    # read the SALE price, never the ListPrice, and honor the currency there.
+    body = ('<script type="application/ld+json">{"@type": "Product", '
+            '"name": "X Booster Box", "offers": [{"@type": "Offer", '
+            '"availability": "https://schema.org/InStock", '
+            '"priceSpecification": ['
+            '{"@type": "UnitPriceSpecification", "price": "599.00", '
+            '"priceCurrency": "DKK"}, '
+            '{"@type": "UnitPriceSpecification", "price": "649.00", '
+            '"priceCurrency": "DKK", '
+            '"priceType": "https://schema.org/ListPrice"}]}]}</script>')
+    p = scanner.parse_jsonld_product(body, ["booster", "box"])
+    assert p.error is None
+    assert p.price == pytest.approx(599.0)     # sale, not the 649 ListPrice
+    assert p.in_stock is True
+
+
 def test_parse_jsonld_product_guards():
     body = load("jsonld_product.html")
     # Wrong product → title guard refuses (never a wrong price).
