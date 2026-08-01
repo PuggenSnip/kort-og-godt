@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 5,
+    "config_version": 6,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -63,7 +63,8 @@
           "shop": "flinamania.dk",
           "method": "shopify_handle",
           "url": "https://flinamania.dk/products/pokemon-tcg-mega-evolution-pitch-black-booster-box-36-packs",
-          "ref_price_2026_08_01": 1700
+          "ref_price_2026_08_01": 1700,
+          "requires_dk_ip": true
         },
         {
           "shop": "spilforsyningen.dk",
@@ -169,7 +170,8 @@
           "shop": "flinamania.dk",
           "method": "shopify_handle",
           "url": "https://flinamania.dk/products/prismatic-evolutions-elite-trainer-box",
-          "ref_price_2026_08_01": 1050
+          "ref_price_2026_08_01": 1050,
+          "requires_dk_ip": true
         },
         {
           "shop": "spilforsyningen.dk",
@@ -386,7 +388,8 @@
           "shop": "flinamania.dk",
           "method": "shopify_handle",
           "url": "https://flinamania.dk/products/pokemon-tcg-mega-evolution-pitch-black-elite-trainer-box",
-          "ref_price_2026_08_01": 700
+          "ref_price_2026_08_01": 700,
+          "requires_dk_ip": true
         },
         {
           "shop": "spilforsyningen.dk",

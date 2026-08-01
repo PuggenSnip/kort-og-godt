@@ -32,7 +32,10 @@ def main() -> int:
             print(f"{mark} {shop:22s} {product_name[:40]:40s} {detail}")
 
         summary = scanner.run_headless(
-            conn, os.environ.get("DISCORD_WEBHOOK_URL") or None, progress)
+            conn, os.environ.get("DISCORD_WEBHOOK_URL") or None, progress,
+            # GitHub-hosted runners sit outside Denmark; geo-priced shops
+            # (requires_dk_ip sources) would serve foreign-currency prices.
+            non_dk_vantage=bool(os.environ.get("GITHUB_ACTIONS")))
     finally:
         conn.close()
 

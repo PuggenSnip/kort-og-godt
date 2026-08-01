@@ -127,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 5    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 6    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
@@ -179,6 +179,12 @@ def _migrate_config(cfg: dict) -> bool:
                 if "advanced_search_result.php" not in (s.get("url") or "")]
         if len(kept) != len(srcs):
             p["sources"] = kept
+        # v6: geo-priced shops must carry requires_dk_ip so the scheduled
+        # (non-DK) scan skips them instead of recording foreign-currency
+        # prices. Stamp known geo-priced shops on already-stored sources.
+        for s in p.get("sources", []):
+            if s.get("shop") == "flinamania.dk":
+                s.setdefault("requires_dk_ip", True)
     # Adopt seed values for per-shop maps only where the user hasn't set one.
     for map_key in ("shop_shipping_dkk", "preferred_shops"):
         seed_map = seed.get("settings", {}).get(map_key, {})
@@ -914,6 +920,17 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
         reference_only=bool(source.get("reference_only")),
         source_kind="shopify" if method.startswith("shopify") else "html",
     )
+    # Geo-priced shops (Shopify Markets): flinamania.dk serves USD prices to
+    # non-Danish IPs, so scanning it from a US-based CI runner records wrong
+    # numbers (caught by the plausibility band on the first cron run). Such
+    # sources are marked requires_dk_ip and are policy-SKIPPED — not failed —
+    # when the scan runs from a non-DK vantage (settings.non_dk_vantage, set
+    # by the scheduled-scan entry). App scans from Denmark are unaffected.
+    if source.get("requires_dk_ip") and settings.get("non_dk_vantage"):
+        obs.status = "skipped"
+        obs.error = "geo-priced shop — only checked from Denmark"
+        return obs
+
     if method == "cardmarket_manual":
         obs.source_kind = "manual"
         obs.status = "manual"
@@ -2052,7 +2069,7 @@ def notify_new_buys(conn: Database, webhook_url: Optional[str],
 
 
 def run_headless(conn: Database, webhook: Optional[str] = None,
-                 progress=None) -> dict:
+                 progress=None, non_dk_vantage: bool = False) -> dict:
     """One unattended scan cycle — the scheduled (GitHub Actions) entry point.
 
     Scan → collection snapshot → verdicts → Discord diff, exactly what the app
@@ -2064,6 +2081,8 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
     """
     cfg = get_config(conn)
     cfg["settings"]["record_fixtures"] = False
+    if non_dk_vantage:      # e.g. a US-based CI runner: skip geo-priced shops
+        cfg["settings"]["non_dk_vantage"] = True
     scan_id, observations = run_scan(cfg, conn, progress)
     try:
         snapshot_collection(conn, cfg, get_collection(conn))

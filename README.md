@@ -62,6 +62,12 @@ after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
   sources (the ones that drive BUY links) are Danish shops only.
   International sources (US pricecharting today; more later) are welcome as
   `reference_only` — shown for full market perspective, never a BUY.
+- **Geo-priced shop guard.** flinamania.dk serves USD prices to non-Danish
+  visitors (Shopify Markets) — the very first scheduled run proved it, and
+  the plausibility band refused all three wrong prices. Such sources are now
+  marked `requires_dk_ip`: the scheduled (US-hosted) scan skips them with an
+  honest "only checked from Denmark" note, while in-app scans from Denmark
+  use them normally.
 
 ## Earlier (v0.3) — wider, honest coverage
 

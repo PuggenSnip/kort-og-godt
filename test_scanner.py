@@ -1183,6 +1183,51 @@ def test_run_headless_no_webhook_leaves_buy_state(conn):
     assert snap["n"] >= 1                       # snapshot recorded
 
 
+def test_geo_priced_source_skipped_from_non_dk_vantage(conn):
+    # A requires_dk_ip source (flinamania geo-prices USD to non-DK IPs) is a
+    # policy SKIP from CI — never fetched, never a failure — and behaves
+    # normally when scanned from Denmark.
+    settings = dict(SETTINGS, record_fixtures=False)
+    body = load("epicpanda_product.html")
+    src = {"shop": "flinamania.dk", "method": "epicpanda", "url": "http://f",
+           "requires_dk_ip": True}
+    # DK vantage (default): scans normally.
+    obs = scanner.scan_source(make_product(), src, _StubFetcher(body), settings)
+    assert obs.status == "ok"
+    # Non-DK vantage: policy skip, no fetch, honest note.
+    settings["non_dk_vantage"] = True
+    obs = scanner.scan_source(make_product(), src, _StubFetcher(body), settings)
+    assert obs.status == "skipped"
+    assert "geo-priced" in obs.error
+    # And a skipped geo row doesn't wedge the product: verdict treats it as a
+    # note, exactly like a robots skip.
+    scanner.insert_observation(conn, obs, scan_id=1)
+    put(conn, shop="shopA", price=1400)
+    product = make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        src,
+    ])
+    v = scanner.product_verdict(conn, product, settings)
+    assert v.code == "BUY"
+    assert any("geo-priced" in n for n in v.notes)
+
+
+def test_migrate_config_v6_stamps_geo_flag():
+    stored = {
+        "settings": dict(scanner.DEFAULT_SETTINGS, config_version=5),
+        "products": [{
+            "id": "pitch-black-etb-en", "name": "PB ETB",
+            "sources": [{"shop": "flinamania.dk", "method": "shopify_handle",
+                         "url": "https://flinamania.dk/products/x"}],
+            "triggers": {},
+        }],
+    }
+    assert scanner._migrate_config(stored) is True
+    s = stored["products"][0]["sources"][0]
+    assert s["requires_dk_ip"] is True
+    assert stored["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
 def test_migrate_config_v5_adds_kelz0r_etbs_and_bands():
     stored = {
         "settings": dict(scanner.DEFAULT_SETTINGS, config_version=4),
