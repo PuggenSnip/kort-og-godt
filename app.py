@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.8.1"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.8.2"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 
@@ -418,54 +418,91 @@ with tab_scan:
                 st.caption("Sparkline appears after scans on ≥ 2 days.")
 
             # Cardmarket manual-entry history (EUR, plotted as-entered — the
-            # honest signal, not the EUR_DKK-pegged DKK).
+            # honest signal, not the EUR_DKK-pegged DKK). The buy threshold is
+            # overlaid as a flat line so "how far below target" reads at a glance.
+            cm = product.get("cardmarket") or {}
+            cm_below = product.get("triggers", {}).get("cardmarket_buy_below_eur")
             cm_hist = scanner.cardmarket_series(conn, product["id"])
             if len(cm_hist) >= 2:
                 st.caption("Cardmarket manual entries (€)")
-                st.line_chart(
-                    {"Cardmarket €":
-                     {t[:16].replace("T", " "): p for t, p in cm_hist}},
-                    height=160)
+                chart = {"Cardmarket €":
+                         {t[:16].replace("T", " "): p for t, p in cm_hist}}
+                if cm_below:
+                    chart["Buy threshold €"] = {
+                        t[:16].replace("T", " "): cm_below for t, _ in cm_hist}
+                st.line_chart(chart, height=180)
 
-            # Cardmarket manual entry.
-            cm = product.get("cardmarket") or {}
+            # Compact stats line: latest, freshness, range, target status.
+            stats = scanner.cardmarket_stats(conn, product, settings)
+            if stats:
+                bits = [f"latest **€{stats['latest_eur']:g}** "
+                        f"({scanner.fmt_dkk(stats['latest_dkk'], 0)}) on "
+                        f"{stats['latest_date'][:10]}"]
+                if stats["age_days"] is not None:
+                    bits.append(f"{stats['age_days']}d ago"
+                                + (" — stale" if stats["stale"] else ""))
+                bits.append(f"range €{stats['min_eur']:g}–€{stats['max_eur']:g} "
+                            f"({stats['n']} entr{'y' if stats['n'] == 1 else 'ies'})")
+                if stats["threshold_eur"]:
+                    mark = ("✅ ≤ target" if stats["meets_threshold"]
+                            else "above target")
+                    bits.append(f"target €{stats['threshold_eur']:g} — {mark}")
+                st.caption("💶 " + "  ·  ".join(bits))
+
+            # Manual entry — with an optional backdate to fill in history.
             if cm.get("url"):
-                cm_col1, cm_col2, cm_col3 = st.columns([1, 1, 2])
+                cm_col1, cm_col2, cm_col3, cm_col4 = st.columns([1, 1, 1, 1])
                 with cm_col1:
                     st.link_button("🔗 Check Cardmarket", cm["url"])
                 with cm_col2:
                     eur = st.number_input(
-                        "Today's lowest (€)", min_value=0.0, step=1.0,
-                        value=None, key=f"cm_{product['id']}",
-                        help="Paste today's lowest Cardmarket price. Stored "
-                             "like scraped data (EUR × 7.46 → DKK).")
+                        "Lowest (€)", min_value=0.0, step=1.0, value=None,
+                        key=f"cm_{product['id']}",
+                        help="Paste the lowest Cardmarket price. Stored like "
+                             "scraped data (EUR × 7.46 → DKK).")
                 with cm_col3:
+                    as_of = st.date_input(
+                        "As of", value=date.today(), key=f"cmd_{product['id']}",
+                        help="When this price was seen. Leave as today for a "
+                             "current price; set earlier to fill in history — "
+                             "backdated entries never change the verdict.")
+                with cm_col4:
                     # No `disabled=` (a disabled button swallows the click that
                     # commits the number_input) — validate inside the handler.
-                    if st.button("Save Cardmarket price",
-                                 key=f"cm_save_{product['id']}"):
+                    if st.button("Save price", key=f"cm_save_{product['id']}"):
                         if eur is None or eur <= 0:
                             st.warning("Enter a price above 0 first.")
                         else:
+                            # Only pass observed_at when backdating, so a normal
+                            # today entry keeps its full timestamp (now).
+                            obs_at = (None if as_of == date.today()
+                                      else f"{as_of.isoformat()}T12:00:00")
                             scanner.add_manual_cardmarket_entry(
                                 conn, product, float(eur), settings,
-                                added_by=person)
+                                added_by=person, observed_at=obs_at)
                             flash(f"Saved Cardmarket €{eur:g} for "
                                   f"{product['name']} "
-                                  f"({scanner.fmt_dkk(eur * scanner.EUR_DKK)})")
+                                  f"({scanner.fmt_dkk(eur * scanner.EUR_DKK)})"
+                                  + ("" if obs_at is None else f", as of {as_of}"))
                             st.rerun()
-                    cm_last = conn.execute(
-                        "SELECT price_native, observed_at, added_by "
-                        "FROM observations "
-                        "WHERE product_id = :pid AND source_kind = 'manual' "
-                        "ORDER BY id DESC LIMIT 1",
-                        {"pid": product["id"]}).fetchone()
-                    if cm_last:
-                        by = (f" by {cm_last['added_by']}"
-                              if cm_last.get("added_by") else "")
-                        st.caption(
-                            f"Last entry: €{cm_last['price_native']:g} on "
-                            f"{cm_last['observed_at'].replace('T', ' ')}{by}")
+
+                # Manage / correct entries — list recent ones, delete a bad one.
+                entries = scanner.list_cardmarket_entries(conn, product["id"])
+                if entries:
+                    with st.expander(
+                            f"✏️ Manage Cardmarket entries ({len(entries)})"):
+                        for e in entries:
+                            ec1, ec2 = st.columns([4, 1])
+                            by = (f" · {e['added_by']}"
+                                  if e.get("added_by") else "")
+                            ec1.write(f"€{e['price_native']:g} · "
+                                      f"{e['observed_at'][:10]}{by}")
+                            if ec2.button("🗑 Delete", key=f"cmdel_{e['id']}"):
+                                scanner.delete_cardmarket_entry(conn, e["id"])
+                                flash(f"Deleted Cardmarket entry "
+                                      f"€{e['price_native']:g} "
+                                      f"({e['observed_at'][:10]})")
+                                st.rerun()
 
 
 # ---------------------------------------------------------------------------

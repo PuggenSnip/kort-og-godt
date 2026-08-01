@@ -1664,3 +1664,71 @@ def test_value_collection_by_game_and_by_set(conn):
     assert bs["Pokémon Set A ETB"]["realized_pl"] == pytest.approx(400)   # h4
     assert bs["Pokémon Set B Box"]["market_value"] == pytest.approx(1600)
     assert bs["MTG Something Box"]["market_value"] == pytest.approx(900)
+
+
+# ---------------------------------------------------------------------------
+# v0.8.2 — Cardmarket: backdating, delete, stats
+# ---------------------------------------------------------------------------
+
+def test_cardmarket_backdate_stored_in_series(conn):
+    p = make_product()
+    scanner.add_manual_cardmarket_entry(conn, p, 100.0, SETTINGS,
+                                        observed_at="2026-06-01T12:00:00")
+    scanner.add_manual_cardmarket_entry(conn, p, 90.0, SETTINGS)      # today
+    s = scanner.cardmarket_series(conn, p["id"])
+    assert [round(v) for _, v in s] == [100, 90]      # oldest→newest by date
+    assert s[0][0].startswith("2026-06-01")
+
+
+def test_cardmarket_backdate_does_not_hijack_verdict(conn):
+    # A fresh today price ABOVE the threshold must win over a backdated (older-
+    # dated but later-inserted) price BELOW it — _latest_cm_entry is date-ordered.
+    p = make_product(sources=[], triggers={"cardmarket_buy_below_eur": 150})
+    scanner.add_manual_cardmarket_entry(conn, p, 200.0, SETTINGS)     # today > 150
+    scanner.add_manual_cardmarket_entry(conn, p, 100.0, SETTINGS,     # backdated <150
+                                        observed_at="2026-07-20T12:00:00")
+    assert scanner._latest_cm_entry(conn, p["id"])["price_native"] == 200.0
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code != "BUY"                            # not driven by the old 100
+
+
+def test_delete_cardmarket_entry_scoped_to_manual(conn):
+    p = make_product()
+    scanner.add_manual_cardmarket_entry(conn, p, 120.0, SETTINGS)
+    put(conn, shop="shopA", method="epicpanda", price=1500)          # scraped row
+    scraped_id = conn.execute(
+        "SELECT id FROM observations WHERE source_kind='html' LIMIT 1"
+    ).fetchone()["id"]
+    assert scanner.delete_cardmarket_entry(conn, scraped_id) is False  # scoped out
+    entries = scanner.list_cardmarket_entries(conn, p["id"])
+    assert len(entries) == 1
+    assert scanner.delete_cardmarket_entry(conn, entries[0]["id"]) is True
+    assert scanner.list_cardmarket_entries(conn, p["id"]) == []
+    assert scanner.delete_cardmarket_entry(conn, 999999) is False      # no such id
+
+
+def test_cardmarket_stats(conn):
+    p = make_product(triggers={"cardmarket_buy_below_eur": 150})
+    scanner.add_manual_cardmarket_entry(conn, p, 200.0, SETTINGS,
+                                        observed_at="2026-06-01T12:00:00")
+    scanner.add_manual_cardmarket_entry(conn, p, 130.0, SETTINGS)      # today ≤150
+    stats = scanner.cardmarket_stats(conn, p, SETTINGS)
+    assert stats["n"] == 2
+    assert stats["latest_eur"] == 130.0                    # newest-dated
+    assert stats["min_eur"] == 130.0 and stats["max_eur"] == 200.0
+    assert stats["threshold_eur"] == 150
+    assert stats["meets_threshold"] is True                # 130 ≤ 150, fresh
+    assert stats["age_days"] == 0 and stats["stale"] is False
+    assert scanner.cardmarket_stats(
+        conn, make_product(id="no-entries-product"), SETTINGS) is None
+
+
+def test_cardmarket_stats_stale_blocks_meets(conn):
+    # A backdated entry beyond max_age is stale → meets_threshold False even ≤ target.
+    p = make_product(triggers={"cardmarket_buy_below_eur": 150})
+    old = (datetime.now() - timedelta(days=60)).isoformat(timespec="seconds")
+    scanner.add_manual_cardmarket_entry(conn, p, 100.0, SETTINGS, observed_at=old)
+    stats = scanner.cardmarket_stats(
+        conn, p, dict(SETTINGS, cardmarket_max_age_days=30))
+    assert stats["stale"] is True
+    assert stats["meets_threshold"] is False               # ≤150 but stale

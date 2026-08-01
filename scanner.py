@@ -1211,22 +1211,94 @@ def insert_observation(conn: Database, obs: Observation,
 
 def add_manual_cardmarket_entry(conn: Database, product: dict,
                                 price_eur: float, settings: dict,
-                                added_by: Optional[str] = None) -> Observation:
+                                added_by: Optional[str] = None,
+                                observed_at: Optional[str] = None) -> Observation:
     """Store a manually entered Cardmarket price like scraped data.
 
     `added_by` (a person's name) is recorded for shared deployments so the
     collection can show who entered each price; None for single-user runs.
+    `observed_at` backdates the entry (ISO date/datetime) so history can be
+    filled in; None stamps now. A backdated entry never hijacks the current
+    verdict — _latest_cm_entry orders by observed_at, so a newer-dated price
+    still wins (and one older than cardmarket_max_age_days is treated as stale).
     """
     cm = product.get("cardmarket", {})
     shipping = float(cm.get("shipping_dkk", 0))
     obs = Observation(
         product_id=product["id"], shop="cardmarket", url=cm.get("url", ""),
-        method="cardmarket_manual", observed_at=now_iso(),
+        method="cardmarket_manual", observed_at=observed_at or now_iso(),
         title=product["name"], price_native=price_eur, currency="EUR",
         price_dkk=price_eur * EUR_DKK, landed_dkk=price_eur * EUR_DKK + shipping,
         in_stock=True, status="ok", source_kind="manual", added_by=added_by)
     insert_observation(conn, obs, scan_id=None)
     return obs
+
+
+def list_cardmarket_entries(conn: Database, product_id: str,
+                            limit: int = 20) -> list[dict]:
+    """Recent manual Cardmarket entries (newest-dated first) for display and
+    management: id, observed_at, price_native (EUR), added_by."""
+    rows = conn.execute(
+        """SELECT id, observed_at, price_native, added_by FROM observations
+           WHERE product_id = :pid AND source_kind = 'manual'
+             AND price_native IS NOT NULL
+           ORDER BY observed_at DESC, id DESC LIMIT :lim""",
+        {"pid": product_id, "lim": limit}).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_cardmarket_entry(conn: Database, obs_id: int) -> bool:
+    """Delete one manual Cardmarket entry by id. Scoped to source_kind='manual'
+    so a scraped observation can never be removed through this path. Returns
+    True when a row was actually deleted."""
+    row = conn.execute(
+        "SELECT id FROM observations "
+        "WHERE id = :i AND source_kind = 'manual'", {"i": obs_id}).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "DELETE FROM observations WHERE id = :i AND source_kind = 'manual'",
+        {"i": obs_id})
+    return True
+
+
+def cardmarket_stats(conn: Database, product: dict,
+                     settings: dict) -> Optional[dict]:
+    """Summary of a product's manual Cardmarket entries for the UI: count,
+    latest price (EUR + landed DKK + date + age + staleness), min/max EUR over
+    the last year, and whether the latest fresh entry meets the buy threshold.
+    None when there are no entries."""
+    pid = product["id"]
+    series = cardmarket_series(conn, pid)          # (ts, EUR), oldest→newest
+    if not series:
+        return None
+    latest = _latest_cm_entry(conn, pid)           # by observed_at DESC
+    if latest is None:
+        return None
+    eur_vals = [p for _, p in series]
+    latest_eur = latest["price_native"]
+    shipping = float((product.get("cardmarket") or {}).get("shipping_dkk", 0))
+    try:
+        age_days = (datetime.now()
+                    - datetime.fromisoformat(latest["observed_at"])).days
+    except (TypeError, ValueError):
+        age_days = None
+    max_age = settings.get("cardmarket_max_age_days")
+    stale = bool(max_age and age_days is not None and age_days > max_age)
+    cm_below = product.get("triggers", {}).get("cardmarket_buy_below_eur")
+    meets = (cm_below is not None and latest_eur <= cm_below and not stale)
+    return {
+        "n": len(series),
+        "latest_eur": latest_eur,
+        "latest_dkk": latest_eur * EUR_DKK + shipping,
+        "latest_date": latest["observed_at"],
+        "age_days": age_days,
+        "stale": stale,
+        "min_eur": min(eur_vals),
+        "max_eur": max(eur_vals),
+        "threshold_eur": cm_below,
+        "meets_threshold": meets,
+    }
 
 
 def run_scan(cfg: dict, conn: Database,
@@ -1470,10 +1542,16 @@ def _cheapest_key(settings: dict):
 
 def _latest_cm_entry(conn: Database,
                      product_id: str) -> Optional[dict]:
+    # Order by the PRICE date (observed_at), not insertion id: a backdated
+    # entry (a historical price entered to fill the chart) must never override
+    # a newer-dated price in the verdict. id breaks ties (two same-date entries
+    # → the later-entered correction wins). Same result as id-order for the
+    # legacy today-only data, where observed_at and id increase together.
     return conn.execute(
         """SELECT * FROM observations
            WHERE product_id = :pid AND source_kind = 'manual' AND status = 'ok'
-           ORDER BY id DESC LIMIT 1""", {"pid": product_id}).fetchone()
+           ORDER BY observed_at DESC, id DESC LIMIT 1""",
+        {"pid": product_id}).fetchone()
 
 
 def product_verdict(conn: Database, product: dict,
