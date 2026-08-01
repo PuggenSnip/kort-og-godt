@@ -376,7 +376,10 @@ def test_live_fixture_smoke(path):
     """Recorded real responses must parse correctly (or error honestly)."""
     body = path.read_text(encoding="utf-8")
     name = path.name
-    if "kelz0r" in name and "-p-" in name:
+    if "br-dk" in name:
+        p = scanner.parse_jsonld_product(body)
+        assert p.error is None and p.price > 0
+    elif "kelz0r" in name and "-p-" in name:
         p = scanner.parse_kelz0r_product(body)
         assert p.error is None and p.price > 0
     elif "kelz0r" in name:
@@ -1123,6 +1126,91 @@ def test_get_config_migrates_stored_db_config(conn):
     # Persisted: reading again straight from the DB shows the stamp.
     again = scanner.get_config(conn)
     assert again["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
+# ---------------------------------------------------------------------------
+# v0.3 — br.dk: JSON-LD parser + preferred-shop tie-break
+# ---------------------------------------------------------------------------
+
+def test_parse_jsonld_product():
+    p = scanner.parse_jsonld_product(load("jsonld_product.html"),
+                                     ["pitch", "black", "elite", "trainer"])
+    assert p.error is None
+    assert p.price == 599
+    assert p.in_stock is True
+    assert "Pitch Black Elite Trainer Box" in p.title
+
+
+def test_parse_jsonld_product_guards():
+    body = load("jsonld_product.html")
+    # Wrong product → title guard refuses (never a wrong price).
+    p = scanner.parse_jsonld_product(body, ["ascended", "heroes"])
+    assert p.error and p.price is None
+    # Currency mismatch → refuses to mis-label.
+    p = scanner.parse_jsonld_product(body, None, expected_currency="EUR")
+    assert p.error and "priceCurrency" in p.error
+    # Page with no Product data (BR serves an empty shell for dead URLs).
+    p = scanner.parse_jsonld_product("<html><body>BR.dk</body></html>")
+    assert p.error and p.price is None
+    # OutOfStock maps honestly; @graph + offers-as-list shapes parse too.
+    graph = ('<script type="application/ld+json">{"@graph": [{"@type": '
+             '"Product", "name": "X Box", "offers": [{"price": "123.45", '
+             '"priceCurrency": "DKK", "availability": '
+             '"http://schema.org/OutOfStock"}]}]}</script>')
+    p = scanner.parse_jsonld_product(graph)
+    assert p.error is None
+    assert p.price == pytest.approx(123.45)
+    assert p.in_stock is False
+
+
+def test_cheapest_tiebreak_prefers_shop(conn):
+    # Same landed price at both shops → the preferred shop wins the pick and
+    # the verdict explains why; a genuinely lower price still beats preference.
+    put(conn, shop="symbizon.dk", price=1400)
+    put(conn, shop="br.dk", method="jsonld_product", price=1400)
+    settings = dict(SETTINGS)
+    settings["preferred_shops"] = {"br.dk": "1 års ombytning på uåbnede varer"}
+    product = make_product(sources=[
+        {"shop": "symbizon.dk", "method": "epicpanda", "url": "http://a"},
+        {"shop": "br.dk", "method": "jsonld_product", "url": "http://b"},
+    ])
+    v = scanner.product_verdict(conn, product, settings)
+    assert v.code == "BUY"
+    assert v.cheapest_shop == "br.dk"
+    assert any("br.dk" in n and "prislighed" in n for n in v.notes)
+    # Now symbizon undercuts by 1 kr → preference must NOT override price.
+    put(conn, shop="symbizon.dk", price=1399)
+    v2 = scanner.product_verdict(conn, product, settings)
+    assert v2.cheapest_shop == "symbizon.dk"
+    assert v2.cheapest_dkk == 1399
+
+
+def test_migrate_config_v4_adds_br_and_preferred():
+    # A DB config already migrated to v3 (e.g. by the v0.3 rollout) must pick
+    # up the v4 additions: br.dk source on the ETB + the preference setting.
+    stored = {
+        "settings": dict(scanner.DEFAULT_SETTINGS,
+                         config_version=3,
+                         shop_shipping_dkk={"kelz0r.dk": 45},
+                         preferred_shops={"myshop.dk": "custom reason"}),
+        "products": [{
+            "id": "pitch-black-etb-en",
+            "name": "Pokémon Pitch Black ETB EN",
+            "sources": [{"shop": "symbizon.dk", "method": "shopify_search",
+                         "url": "https://symbizon.dk/"}],
+            "triggers": {"buy_below_dkk": 599},
+        }],
+    }
+    assert scanner._migrate_config(stored) is True
+    p = next(q for q in stored["products"] if q["id"] == "pitch-black-etb-en")
+    assert any(s["shop"] == "br.dk" and s["method"] == "jsonld_product"
+               for s in p["sources"])
+    assert stored["settings"]["preferred_shops"]["br.dk"] \
+        == "1 års ombytning på uåbnede varer"
+    assert stored["settings"]["preferred_shops"]["myshop.dk"] \
+        == "custom reason"                     # user's own entry untouched
+    assert stored["settings"]["shop_shipping_dkk"]["br.dk"] == 0
+    assert stored["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
 
 
 def test_notify_new_buys_persists_and_diffs(conn):

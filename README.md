@@ -43,6 +43,17 @@ after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
 ## What's new in v0.3 — wider, honest coverage
 
+- **Fætter BR (br.dk) is now a scanned source** — the old "not scannable"
+  note was stale: BR's robots.txt only blocks its search, not product pages,
+  and product pages carry clean JSON-LD price data. Verified live (Pitch
+  Black ETB, 599 kr, fri fragt > 599). Powered by a new **generic
+  `jsonld_product` method** that works on any shop embedding schema.org
+  Product data — usable for future non-Shopify shops straight from Config.
+- **Preferred-shop tie-break**: `settings.preferred_shops` names shops that
+  win the "cheapest" pick on an **exact** landed-price tie, with the reason
+  shown on the verdict. Seeded: **br.dk — 1 års ombytning på uåbnede varer**
+  (a same-price BR purchase is strictly better: full downside hedge). A
+  genuinely lower price elsewhere always beats the preference.
 - **3 new Danish shops** (all independently verified live before adding):
   **cardx.dk**, **flinamania.dk**, **spilforsyningen.dk** — exact box/ETB
   listings only, matched by verified product handle. Notably: first-ever
@@ -120,6 +131,9 @@ after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 - **kelz0r.dk** — HTML scrape (osCommerce) of *allowed* product pages
   (`…-p-NNN.html`; robots.txt only forbids the search-results endpoint).
   Parses Danish prices + "På lager"; flags "Risiko for allokering".
+- **br.dk (Fætter BR)** — generic JSON-LD product data (`jsonld_product`
+  method; robots.txt only blocks their search). Preferred on exact price
+  ties: 1 year of returns on unopened products.
 - **epicpanda.dk** — HTML scrape, `1.999,95 DKK` format.
 - **pricecharting.com** — US reference for trends (`reference_only`: shown,
   never feeds the verdict).

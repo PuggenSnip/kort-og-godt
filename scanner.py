@@ -59,6 +59,10 @@ DEFAULT_SETTINGS = {
     # as these numbers. A shop absent here counts 0 and the UI marks its
     # landed price with * (shelf price, shipping unknown).
     "shop_shipping_dkk": {},
+    # Shops preferred when landed prices TIE exactly (map shop -> short why).
+    # E.g. br.dk gives 1 year of returns on unopened products, so at the same
+    # price it is strictly the better venue. Never beats a lower price.
+    "preferred_shops": {},
 }
 
 
@@ -123,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 3    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 4    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
@@ -167,11 +171,13 @@ def _migrate_config(cfg: dict) -> bool:
                 if "advanced_search_result.php" not in (s.get("url") or "")]
         if len(kept) != len(srcs):
             p["sources"] = kept
-    seed_ship = seed.get("settings", {}).get("shop_shipping_dkk", {})
-    mine = cfg.setdefault("settings", {}).setdefault("shop_shipping_dkk", {})
-    for shop, dkk in seed_ship.items():
-        if shop not in mine:
-            mine[shop] = dkk
+    # Adopt seed values for per-shop maps only where the user hasn't set one.
+    for map_key in ("shop_shipping_dkk", "preferred_shops"):
+        seed_map = seed.get("settings", {}).get(map_key, {})
+        mine = cfg.setdefault("settings", {}).setdefault(map_key, {})
+        for shop, val in seed_map.items():
+            if shop not in mine:
+                mine[shop] = val
     # Always stamp + persist the version (even if nothing merged) so the
     # migration — and its seed-file read — doesn't re-run on every load.
     cfg["settings"]["config_version"] = SEED_CONFIG_VERSION
@@ -727,6 +733,77 @@ def parse_pricecharting(body: str, pc_field: str = "used") -> ParsedPrice:
     return ParsedPrice(title=title, error="no USD price found")
 
 
+_JSONLD_IN_STOCK = ("instock", "preorder", "presale", "limitedavailability")
+_JSONLD_NO_STOCK = ("outofstock", "soldout", "discontinued")
+
+
+def parse_jsonld_product(body: str, query_words: Optional[list] = None,
+                         expected_currency: str = "DKK") -> ParsedPrice:
+    """Parse any product page embedding schema.org JSON-LD Product data
+    (<script type="application/ld+json">). Generic: works for br.dk and most
+    modern webshop platforms without a bespoke parser.
+
+    query_words: like kelz0r_product's guard — if given and not all present in
+    the product name, the page is treated as wrong/repurposed (error, never a
+    wrong price). A priceCurrency mismatch with the source's configured
+    currency is likewise an error rather than a silently mis-labelled number.
+    """
+    tree = HTMLParser(body)
+    products = []
+    for node in tree.css('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(node.text())
+        except (ValueError, TypeError):
+            continue                        # malformed block — try the next
+        items = data if isinstance(data, list) else [data]
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            graph = it.get("@graph")
+            candidates = graph if isinstance(graph, list) else [it]
+            for c in candidates:
+                if not isinstance(c, dict):
+                    continue
+                t = c.get("@type")
+                types = t if isinstance(t, list) else [t]
+                if "Product" in types:
+                    products.append(c)
+    if not products:
+        return ParsedPrice(error="no JSON-LD Product data on page")
+
+    p = products[0]
+    title = str(p.get("name") or "")
+    if query_words:
+        low = title.lower()
+        if not all(w.lower() in low for w in query_words):
+            return ParsedPrice(title=title, error=(
+                f"JSON-LD product {title!r} does not match {query_words} "
+                "— wrong/repurposed page?"))
+    offers = p.get("offers") or {}
+    if isinstance(offers, list):
+        offers = offers[0] if offers else {}
+    if not isinstance(offers, dict):
+        return ParsedPrice(title=title, error="no usable JSON-LD offer")
+    raw_price = offers.get("price", offers.get("lowPrice"))
+    try:
+        price = float(raw_price)
+    except (TypeError, ValueError):
+        return ParsedPrice(title=title, error="no price in JSON-LD offer")
+    currency = str(offers.get("priceCurrency") or "").upper()
+    if currency and currency != expected_currency.upper():
+        return ParsedPrice(title=title, error=(
+            f"JSON-LD priceCurrency {currency} != configured "
+            f"{expected_currency} — refusing to mis-label the price"))
+    availability = str(offers.get("availability") or "").lower()
+    if any(k in availability for k in _JSONLD_NO_STOCK):
+        in_stock = False
+    elif any(k in availability for k in _JSONLD_IN_STOCK):
+        in_stock = True
+    else:
+        in_stock = None
+    return ParsedPrice(title=title, price=price, in_stock=in_stock)
+
+
 def parse_riporflip(body: str, set_name: str) -> ParsedPrice:
     """Extract a Rip-EV percentage for a set from riporfliptcg.com.
 
@@ -883,6 +960,12 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
         elif method == "epicpanda":
             fetch = fetcher.get(url)
             parsed = parse_epicpanda(fetch.body) if fetch.ok else None
+        elif method == "jsonld_product":
+            fetch = fetcher.get(url)
+            parsed = (parse_jsonld_product(
+                fetch.body, source.get("query", "").split() or None,
+                expected_currency=obs.currency)
+                if fetch.ok else None)
         elif method == "pricecharting":
             fetch = fetcher.get(url)
             parsed = (parse_pricecharting(fetch.body, source.get("pc_field", "new"))
@@ -1215,6 +1298,18 @@ class Verdict:
         return VERDICT_STYLE[self.code][1]
 
 
+def _cheapest_key(settings: dict):
+    """Sort key for picking the cheapest shop row: lowest landed price wins;
+    an EXACT price tie goes to a shop listed in settings.preferred_shops
+    (e.g. br.dk — 1 year of returns on unopened products makes it the better
+    venue at the same price). Preference never beats a genuinely lower price."""
+    preferred = settings.get("preferred_shops") or {}
+
+    def key(r):
+        return (r["landed_dkk"], 0 if r["shop"] in preferred else 1)
+    return key
+
+
 def _latest_cm_entry(conn: Database,
                      product_id: str) -> Optional[dict]:
     return conn.execute(
@@ -1262,12 +1357,16 @@ def product_verdict(conn: Database, product: dict,
     ok_rows = [r for r in shop_rows if r["status"] == "ok"]
     in_stock_rows = [r for r in ok_rows if r["in_stock"] == 1
                      and r["landed_dkk"] is not None and r["landed_dkk"] > 0]
-    cheapest = min(in_stock_rows, key=lambda r: r["landed_dkk"], default=None)
+    cheapest = min(in_stock_rows, key=_cheapest_key(settings), default=None)
     if cheapest is not None:
         v.cheapest_dkk = cheapest["landed_dkk"]
         v.cheapest_shop = cheapest["shop"]
         v.cheapest_url = cheapest["url"]
         v.in_stock = True
+        reason = (settings.get("preferred_shops") or {}).get(cheapest["shop"])
+        if reason:
+            v.notes.append(f"✦ {cheapest['shop']}: {reason} "
+                           "(foretrækkes ved prislighed)")
     for r in ok_rows:
         if r["allocation_risk"]:
             v.notes.append(f"⚠ {r['shop']}: 'Risiko for allokering' flagged")
@@ -1551,7 +1650,7 @@ def current_value(conn: Database, product: dict, settings: dict,
           and r["landed_dkk"] is not None and r["landed_dkk"] > 0]
     if not ok:
         return None
-    best = min(ok, key=lambda r: r["landed_dkk"])
+    best = min(ok, key=_cheapest_key(settings))
     return float(best["landed_dkk"]), best["shop"], best["observed_at"]
 
 

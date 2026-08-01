@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 3,
+    "config_version": 4,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -16,7 +16,11 @@
       "epicpanda.dk": 45,
       "cardx.dk": 45,
       "flinamania.dk": 45,
-      "spilforsyningen.dk": 45
+      "spilforsyningen.dk": 45,
+      "br.dk": 0
+    },
+    "preferred_shops": {
+      "br.dk": "1 års ombytning på uåbnede varer"
     }
   },
   "products": [
@@ -338,6 +342,13 @@
           "method": "shopify_handle",
           "url": "https://spilforsyningen.dk/products/pokemon-mega-evolutions-pitch-black-elite-trainer-box",
           "ref_price_2026_08_01": 799.95
+        },
+        {
+          "shop": "br.dk",
+          "method": "jsonld_product",
+          "url": "https://www.br.dk/produkter/pokemon-tcg-pitch-black-elite-trainer-box/200380918/",
+          "query": "pitch black elite trainer",
+          "ref_price_2026_08_01": 599
         }
       ],
       "cardmarket": {
@@ -346,7 +357,7 @@
       "triggers": {
         "buy_below_dkk": 599
       },
-      "notes": "Fætter BR at MSRP has a 1-year unopened-return policy = downside-hedged venue; prefer BR at ≤ 599 equivalent (check in store — BR is not scannable). symbizon ships free > 599 kr, so its 599 ETB is a borderline-free-shipping case (seeded 0)."
+      "notes": "Fætter BR (br.dk) is now scanned directly (599 kr, fri fragt > 599) and is PREFERRED on exact price ties: 1 års ombytning på uåbnede varer = downside-hedged venue. symbizon also ships free > 599 kr (both seeded 0). BR was out of stock online on 2026-08-01 — physical BR stores may still have it."
     }
   ]
 }

@@ -38,6 +38,10 @@ NYT I v0.3 (flere butikker + aerlige priser)
 - Tre nye danske butikker scannes nu: cardx.dk, flinamania.dk og
   spilforsyningen.dk - og Kelz0r scannes nu direkte paa produktsiderne
   (deres soegeside er fortsat off-limits, men det er produktsiderne ikke).
+- Faetter BR (br.dk) scannes ogsaa nu - og ved HELT ens priser vaelger
+  appen altid BR foerst: 1 aars ombytning paa uaabnede varer goer BR til
+  det bedste sted at koebe ved samme pris. En lavere pris i en anden
+  butik vinder stadig altid.
 - "Landed"-prisen inkluderer nu et fragtestimat pr. butik (kan rettes i
   Config). Star der en * ved prisen, er fragten ukendt, og du ser
   hyldeprisen.
