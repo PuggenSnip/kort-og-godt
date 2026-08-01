@@ -1,18 +1,23 @@
 # Kort og Godt 🃏
 
-Local, read-only price scanner **and collection tracker** for TCG sealed
-products. One button: **SCAN**. Fetches live prices from configured Danish/US
-shops, compares them against your triggers, stores history in SQLite and
-answers **BUY / WAIT / AVOID** per product. It never purchases anything, never
-logs in, never bypasses bot protection.
+Read-only price scanner, **launch-watcher and collection/portfolio tracker**
+for TCG sealed products. One button: **SCAN**. Fetches live prices from
+configured Danish/US shops, compares them against your triggers, stores history
+in SQLite/Postgres and answers **BUY / WATCH / WAIT / AVOID / HOLD /
+UNVERIFIED** per product. It also tracks listed-but-unpriced launch preorders
+and pings you the moment they price at target, values your collection with
+per-set / per-game / realized-by-tax-year P/L, and charts manually-entered
+Cardmarket prices. It never purchases anything, never logs in, never bypasses
+bot protection.
 
 ## Versioning
 
-`0.MINOR.PATCH` (semver, pre-1.0). A **minor** bump is a feature wave
-(`0.4.0` = scheduled scans); a **patch** is a fix or small addition between
-waves (`0.4.1` = geo-priced-shop guard). **1.0** is a milestone we declare
-when the app is stable and feature-complete for the group — not a number we
-drift into, so a climbing minor doesn't imply we're "nearly there".
+`MAJOR.MINOR.PATCH` (semver). Pre-1.0, a **minor** bump was a feature wave
+(`0.4.0` = scheduled scans) and a **patch** a fix or small addition between
+waves (`0.4.1` = geo-priced-shop guard). **1.0** is the first stable,
+feature-complete release for the group — declared after a full pre-release
+audit (verdict engine, migrations, parsers, alerts, valuation, robustness &
+security, deploy), not drifted into.
 
 ## Run
 
@@ -46,8 +51,30 @@ Streamlit Community Cloud with a shared Postgres database — everyone opens one
 URL, and the data (scans, Cardmarket entries, collection, config) is shared.
 Set `DATABASE_URL` (shared Postgres) and `APP_PASSWORD` (shared login) as
 secrets; leave them unset for local single-user use. Optionally set
-`DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
-after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
+`DISCORD_WEBHOOK_URL` to get a Discord ping when a product flips to BUY, drops
+≥ 10 % in price, or a watched preorder first goes live. Full step-by-step in
+**[DEPLOY.md](DEPLOY.md)**.
+
+## What's new in v1.0 — watches, portfolio, Cardmarket, hardening
+
+The first stable release (30 products, 8 Danish shops). On top of the v0.7
+automation:
+- **Notify-watch** — mark a product a *watch* (a listed-but-unpriced launch
+  preorder, or a grail far above target). It shows ⏳ **WATCH** instead of
+  cluttering BUY/HOLD, and pings the moment it prices ≤ your target — or first
+  goes live. Ships tracking the Sept–Nov 2026 *30th Celebration* launches.
+- **Portfolio P/L** — the Collection tab breaks unrealized + realized P/L down
+  **by person, by game and by set**, with a **realized-by-tax-year** roll-up
+  (Danish calendar year) and CSV export.
+- **Smarter Cardmarket capture** — backdate entries to fill in history, delete a
+  bad one, see latest / min / max / staleness at a glance, and the price chart
+  overlays your buy threshold. (Cardmarket is still never scraped — prices are
+  entered manually.)
+- **A black-&-gold GUI makeover** matching the trading-card icon.
+- **Pre-1.0 audit hardening** — a 7-dimension audit fixed a config-save race
+  (atomic upsert), made alert state advance only on delivery (no lost pings from
+  a webhook-less instance or a transient Discord outage), tightened out-of-stock
+  detection, and made a scan uncrashable on a bad config value.
 
 ## What's new in v0.7 — dependable automation
 

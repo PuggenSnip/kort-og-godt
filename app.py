@@ -16,9 +16,9 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.9.1"    # semver 0.MINOR.PATCH — minor = feature wave,
-                         # patch = fixes between waves. 1.0 is declared, not
-                         # drifted into.
+APP_VERSION = "1.0.0"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable,
+                         # feature-complete release, declared after the full
+                         # pre-release audit (not drifted into).
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
 try:
@@ -216,7 +216,7 @@ st.markdown(
       <span class="kog-logo">🃏</span>
       <h1 class="kog-title">Kort og Godt</h1>
       <span class="kog-tagline">TCG sealed-price radar — buy Danish, watch global</span>
-      <span class="kog-ver">v{APP_VERSION} · beta</span>
+      <span class="kog-ver">v{APP_VERSION}</span>
     </div>
     """,
     unsafe_allow_html=True)

@@ -1301,13 +1301,14 @@ def test_price_drops_pure():
     assert scanner.price_drops({"x": 100}, {}, 10) == []       # no prev → skip
 
 
-def test_notify_price_drops_persists_and_dedupes(conn):
+def test_notify_price_drops_persists_and_dedupes(conn, monkeypatch):
+    monkeypatch.setattr(scanner, "post_discord", lambda url, payload: True)
     scanner.put_last_cheapest(conn, {"p1": 1000})
     items = [{"id": "p1", "name": "One", "price": 800, "shop": "s", "url": "u"}]
-    d = scanner.notify_price_drops(conn, "", items, 10)   # empty webhook, no post
+    d = scanner.notify_price_drops(conn, "http://hook", items, 10)    # delivered
     assert len(d) == 1 and d[0]["name"] == "One" and d[0]["shop"] == "s"
-    assert scanner.get_last_cheapest(conn) == {"p1": 800}     # persisted
-    assert scanner.notify_price_drops(conn, "", items, 10) == []   # no re-fire
+    assert scanner.get_last_cheapest(conn) == {"p1": 800}            # advanced
+    assert scanner.notify_price_drops(conn, "http://hook", items, 10) == []  # no re-fire
 
 
 def test_source_health_and_drift_flag(conn):
@@ -1460,16 +1461,38 @@ def test_migrate_config_v4_adds_br_and_preferred():
     assert stored["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
 
 
-def test_notify_new_buys_persists_and_diffs(conn):
+def test_notify_new_buys_persists_and_diffs(conn, monkeypatch):
+    monkeypatch.setattr(scanner, "post_discord", lambda url, payload: True)
+    W = "http://hook"
     buys = [{"id": "p1", "name": "One"}, {"id": "p2", "name": "Two"}]
-    # Empty webhook -> no network; still diffs against the stored set + persists.
-    assert scanner.notify_new_buys(conn, "", buys) == ["p1", "p2"]
-    assert scanner.notify_new_buys(conn, "", buys) == []        # nothing new
+    # Delivered (webhook + post ok) -> diffs against the stored set + advances.
+    assert scanner.notify_new_buys(conn, W, buys) == ["p1", "p2"]
+    assert scanner.notify_new_buys(conn, W, buys) == []        # nothing new
     buys2 = buys + [{"id": "p3", "name": "Three"}]
-    assert scanner.notify_new_buys(conn, "", buys2) == ["p3"]   # only the new one
+    assert scanner.notify_new_buys(conn, W, buys2) == ["p3"]   # only the new one
     # Dropping out of BUY then back doesn't spuriously resurface others.
-    assert scanner.notify_new_buys(conn, "", [{"id": "p1", "name": "One"}]) == []
-    assert scanner.notify_new_buys(conn, "", buys2) == ["p2", "p3"]
+    assert scanner.notify_new_buys(conn, W, [{"id": "p1", "name": "One"}]) == []
+    assert scanner.notify_new_buys(conn, W, buys2) == ["p2", "p3"]
+
+
+def test_notify_new_buys_advances_only_on_delivery(conn, monkeypatch):
+    # No webhook here -> not the alert owner: no ping, state UNTOUCHED so the
+    # webhook-holding instance (the cron) still gets to diff + ping. (Fixes the
+    # bug where a webhook-less app instance silently ate the cron's pings.)
+    buys = [{"id": "p1", "name": "One"}]
+    assert scanner.notify_new_buys(conn, "", buys) == []
+    assert scanner.get_last_buy_set(conn) == set()             # not advanced
+
+    # Webhook set but Discord is down (post returns False) -> not delivered ->
+    # state left untouched so the alert RETRIES next scan (not lost forever).
+    monkeypatch.setattr(scanner, "post_discord", lambda url, payload: False)
+    assert scanner.notify_new_buys(conn, "http://hook", buys) == []
+    assert scanner.get_last_buy_set(conn) == set()
+
+    # Discord recovers -> delivered -> pinged and advanced.
+    monkeypatch.setattr(scanner, "post_discord", lambda url, payload: True)
+    assert scanner.notify_new_buys(conn, "http://hook", buys) == ["p1"]
+    assert scanner.get_last_buy_set(conn) == {"p1"}
 
 
 # ---------------------------------------------------------------------------
@@ -1559,16 +1582,18 @@ def test_newly_priced_watch_ids_pure():
     assert scanner.newly_priced_watch_ids(["x", "y"], [], []) == ["x", "y"]
 
 
-def test_notify_watch_live_persists_dedupes_excludes(conn):
+def test_notify_watch_live_persists_dedupes_excludes(conn, monkeypatch):
+    monkeypatch.setattr(scanner, "post_discord", lambda url, payload: True)
+    W = "http://hook"
     items = [{"id": "w1", "name": "Preorder One", "price": 1200, "shop": "s",
               "url": "u", "target": 1000}]
-    assert scanner.notify_watch_live(conn, "", items) == ["w1"]   # debut
-    assert scanner.get_last_watch_priced(conn) == {"w1"}          # persisted
-    assert scanner.notify_watch_live(conn, "", items) == []       # no re-fire
-    # A below-target debut is a new BUY (excluded) — not double-pinged here,
-    # but still tracked so it never re-fires as a watch-live later.
+    assert scanner.notify_watch_live(conn, W, items) == ["w1"]    # debut, delivered
+    assert scanner.get_last_watch_priced(conn) == {"w1"}          # advanced
+    assert scanner.notify_watch_live(conn, W, items) == []        # no re-fire
+    # A below-target debut is a new BUY (excluded) — not pinged here, but still
+    # tracked so it never re-fires as a watch-live later.
     items2 = items + [{"id": "w2", "name": "Two", "price": 800, "target": 1000}]
-    assert scanner.notify_watch_live(conn, "", items2, exclude_ids=["w2"]) == []
+    assert scanner.notify_watch_live(conn, W, items2, exclude_ids=["w2"]) == []
     assert scanner.get_last_watch_priced(conn) == {"w1", "w2"}
 
 
@@ -1775,3 +1800,60 @@ def test_migrate_v11_preserves_user_edited_target():
     assert _target(cfg, "pkmn-30th-celebration-etb-en") == 800           # kept
     assert _target(cfg, "pkmn-30th-celebration-bundle-en") == 550        # fixed
     assert _target(cfg, "pkmn-30th-celebration-upc-en") == 2250
+
+
+# ---------------------------------------------------------------------------
+# v1.0 — pre-release audit fixes
+# ---------------------------------------------------------------------------
+
+_EPIC_OOS = ('<html><body><h1>Pokémon Pitch Black Booster Box</h1>'
+             '<span itemprop="price" content="1400.00">1.400,00 DKK</span>'
+             '<div>Forventet på lager d. 15-09</div>'
+             '<button>Giv besked når varen er på lager</button>'
+             '<nav>Køb hos os · Kurv</nav></body></html>')
+_EPIC_INSTOCK = ('<html><body><h1>Pokémon Pitch Black Booster Box</h1>'
+                 '<span itemprop="price" content="1400.00">1.400,00 DKK</span>'
+                 '<div>På lager</div><button>Læg i kurv</button></body></html>')
+
+
+def test_epicpanda_forventet_paa_lager_is_out_of_stock():
+    # A preorder page ("Forventet på lager" + notify-me button, no "udsolgt")
+    # must parse as OUT of stock — not in-stock via the "på lager"/"køb" substring.
+    oos = scanner.parse_epicpanda(_EPIC_OOS)
+    assert oos.error is None and oos.price == pytest.approx(1400.0)
+    assert oos.in_stock is False
+    ins = scanner.parse_epicpanda(_EPIC_INSTOCK)
+    assert ins.in_stock is True                       # genuine "På lager"/"Læg i kurv"
+
+
+def test_scan_source_never_raises_on_bad_config(conn):
+    # Bad values typed into the raw-JSON config editor must NOT crash a scan
+    # (invariant: scan_source never raises) — they disable that bound instead.
+    settings = dict(SETTINGS, record_fixtures=False,
+                    shop_shipping_dkk={"shopA": "free"})
+    src = {"shop": "shopA", "method": "epicpanda", "url": "http://a",
+           "shipping_dkk": "free"}
+    obs = scanner.scan_source(make_product(sources=[src]), src,
+                              _StubFetcher(_EPIC_INSTOCK), settings)
+    assert obs.status == "ok"                          # no crash
+    assert obs.landed_dkk == obs.price_dkk             # bad shipping -> 0 (unknown)
+    # Non-numeric plausibility band -> bound disabled, still records the price.
+    p = make_product(sources=[src], triggers={"plausible_min_dkk": "abc",
+                                              "plausible_max_dkk": "xyz"})
+    obs2 = scanner.scan_source(p, src, _StubFetcher(_EPIC_INSTOCK),
+                               dict(SETTINGS, record_fixtures=False))
+    assert obs2.status == "ok"
+
+
+def test_put_kv_upsert_no_gap(conn):
+    # Repeated writes to the same key succeed (atomic upsert, not delete+insert)
+    # and the value is the last written — the row is never transiently missing.
+    scanner._put_kv(conn, "watchlist", {"v": 1})
+    scanner._put_kv(conn, "watchlist", {"v": 2})
+    row = conn.execute(
+        "SELECT value FROM app_config WHERE key = 'watchlist'").fetchone()
+    assert json.loads(row["value"]) == {"v": 2}
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM app_config WHERE key = 'watchlist'"
+    ).fetchone()["n"]
+    assert n == 1                                      # exactly one row, no dup

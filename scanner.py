@@ -129,9 +129,16 @@ def _normalize_collection(col: dict) -> dict:
 
 def _put_kv(conn, key: str, obj: dict) -> None:
     value = json.dumps(obj, ensure_ascii=False)
-    conn.execute("DELETE FROM app_config WHERE key = :k", {"k": key})
-    conn.execute("INSERT INTO app_config (key, value) VALUES (:k, :v)",
-                 {"k": key, "v": value})
+    # Atomic UPSERT (one statement, one transaction). The old DELETE-then-INSERT
+    # ran as two separate autocommitted transactions, leaving a window where the
+    # row was gone — a concurrent get_config on the shared Postgres would see no
+    # config and re-seed from the bundled watchlist.json, silently reverting
+    # every user edit. ON CONFLICT is supported by both modern SQLite (3.24+,
+    # far below Python 3.12's bundled version) and Postgres.
+    conn.execute(
+        "INSERT INTO app_config (key, value) VALUES (:k, :v) "
+        "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        {"k": key, "v": value})
 
 
 SEED_CONFIG_VERSION = 11   # bump when watchlist.json ships sources/settings
@@ -393,12 +400,14 @@ class PoliteFetcher:
                            from_cache=True, fetched_at=row["fetched_at"])
 
     def _cache_put(self, url: str, status: int, body: str) -> None:
-        # Portable upsert: delete-then-insert (no dialect-specific ON CONFLICT).
-        self.conn.execute("DELETE FROM http_cache WHERE url = :url",
-                          {"url": url})
+        # Atomic UPSERT (portable across modern SQLite + Postgres) — no
+        # delete-then-insert gap where a concurrent reader sees no cache row.
         self.conn.execute(
             "INSERT INTO http_cache (url, fetched_at, status, body) "
-            "VALUES (:url, :fetched_at, :status, :body)",
+            "VALUES (:url, :fetched_at, :status, :body) "
+            "ON CONFLICT (url) DO UPDATE SET "
+            "fetched_at = excluded.fetched_at, status = excluded.status, "
+            "body = excluded.body",
             {"url": url, "fetched_at": now_iso(), "status": status,
              "body": body})
 
@@ -761,9 +770,16 @@ def parse_epicpanda(body: str) -> ParsedPrice:
         return ParsedPrice(title=title, error="no price found in page")
 
     in_stock: Optional[bool] = None
-    if re.search(r"(?i)(udsolgt|ikke på lager|sold out)", text):
+    # OUT signals are checked FIRST: DanDomain's out-of-stock phrasing is
+    # "Forventet på lager d. DD-MM" + a "Giv besked når varen er på lager"
+    # notify button (no literal "udsolgt"), and both contain the substring
+    # "på lager" — so they must be caught before the in-stock check. Bare "køb"
+    # is page chrome (menu/footer) and is NOT a stock signal, so it is dropped;
+    # a real in-stock page shows "Læg i kurv"/"add to cart" or a plain "På lager".
+    if re.search(r"(?i)(udsolgt|ikke på lager|sold out|forventet på lager|"
+                 r"giv besked|notify me)", text):
         in_stock = False
-    elif re.search(r"(?i)(på lager|læg i kurv|add to cart|køb)", text):
+    elif re.search(r"(?i)(på lager|læg i kurv|add to cart)", text):
         in_stock = True
     return ParsedPrice(title=title, price=price, in_stock=in_stock)
 
@@ -1018,15 +1034,29 @@ def record_fixture(url: str, body: str) -> None:
         path.write_text(body, encoding="utf-8")
 
 
+def _as_float(x) -> Optional[float]:
+    """float(x) but None on anything non-numeric — so a bad config value typed
+    into the raw-JSON editor can never raise out of a scan."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
 def resolve_shipping_dkk(source: dict, settings: dict) -> float:
     """Effective shipping for a source: its own shipping_dkk wins, else the
     per-shop estimate in settings.shop_shipping_dkk, else 0 (unknown — the UI
-    marks such landed prices with * so 'landed' never quietly means 'shelf')."""
+    marks such landed prices with * so 'landed' never quietly means 'shelf').
+
+    A non-numeric value (e.g. someone typing "free" in the config editor) is
+    treated as unknown (0), never raised — scan_source must never crash."""
     own = source.get("shipping_dkk")
     if own not in (None, ""):
-        return float(own)
+        val = _as_float(own)
+        if val is not None:
+            return val
     per_shop = settings.get("shop_shipping_dkk") or {}
-    return float(per_shop.get(source.get("shop"), 0) or 0)
+    return _as_float(per_shop.get(source.get("shop"))) or 0.0
 
 
 def shipping_known_shops(cfg: dict) -> set:
@@ -1190,10 +1220,12 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
         # box) could ping Discord with a bogus BUY and nobody would be at the
         # screen to catch it. Outside the band → refuse, like price <= 0.
         triggers = product.get("triggers", {})
-        lo = triggers.get("plausible_min_dkk")
-        hi = triggers.get("plausible_max_dkk")
-        if (lo is not None and obs.landed_dkk < float(lo)) or \
-           (hi is not None and obs.landed_dkk > float(hi)):
+        # _as_float so a non-numeric band typed into the config editor disables
+        # that bound instead of raising out of the scan.
+        lo = _as_float(triggers.get("plausible_min_dkk"))
+        hi = _as_float(triggers.get("plausible_max_dkk"))
+        if (lo is not None and obs.landed_dkk < lo) or \
+           (hi is not None and obs.landed_dkk > hi):
             obs.error = (f"implausible landed price {obs.landed_dkk:.2f} kr "
                          f"(outside plausible band {lo}–{hi}) — refusing to "
                          "record")
@@ -2408,19 +2440,31 @@ def post_discord(webhook_url: str, payload: dict) -> bool:
 
 def notify_new_buys(conn: Database, webhook_url: Optional[str],
                     current_buys: list) -> list:
-    """Diff current BUYs against the stored set, ping the new ones, persist.
+    """Diff current BUYs against the stored set and ping the new ones.
 
-    `current_buys`: list of {"id", "name", "reason"(opt), "url"(opt)}.
-    Returns the newly-BUY ids. Persists the current set even when no webhook is
-    configured, so enabling Discord later doesn't replay the whole existing set.
+    `current_buys`: list of {"id", "name", "reason"(opt), "url"(opt)}. Returns
+    the ids actually DELIVERED this scan.
+
+    The tracked set advances ONLY when this scan's alert was delivered — either
+    nothing was new, or a configured webhook accepted the post. With no webhook
+    here (e.g. a friend's local app instance sharing the DB with the cron) or on
+    a Discord error, the state is left untouched so the alert is retried — by
+    this instance next scan, or by whichever instance holds the webhook (the
+    cron). This stops a webhook-less instance from silently eating the cron's
+    pings and a transient Discord outage from dropping an alert forever.
+    (Trade-off: first enabling a webhook on a DB whose state was never advanced
+    replays the current set once.)
     """
     current_ids = [b["id"] for b in current_buys]
     new_ids = newly_buy_ids(current_ids, get_last_buy_set(conn))
-    if webhook_url and new_ids:
+    delivered = True
+    if new_ids:
         fresh = [b for b in current_buys if b["id"] in set(new_ids)]
-        post_discord(webhook_url, build_discord_payload(fresh))
-    put_last_buy_set(conn, current_ids)
-    return new_ids
+        delivered = bool(webhook_url) and post_discord(
+            webhook_url, build_discord_payload(fresh))
+    if delivered:
+        put_last_buy_set(conn, current_ids)
+    return new_ids if delivered else []
 
 
 def get_last_cheapest(conn: Database) -> dict:
@@ -2459,8 +2503,9 @@ def notify_price_drops(conn: Database, webhook_url: Optional[str],
     """Diff cheapest landed vs the previous scan, ping big drops, persist.
 
     `current_items`: list of {"id", "name", "price"(cheapest landed),
-    "shop"(opt), "url"(opt)}. Twin of notify_new_buys — always persists the new
-    cheapest map so enabling Discord later doesn't replay old drops.
+    "shop"(opt), "url"(opt)}. Twin of notify_new_buys — advances the stored
+    cheapest map only on delivery (see notify_new_buys), so a webhook-less
+    instance / a Discord outage never silently drops a price-drop alert.
     """
     current_map = {c["id"]: c["price"] for c in current_items
                    if c.get("price") is not None}
@@ -2469,10 +2514,13 @@ def notify_price_drops(conn: Database, webhook_url: Optional[str],
     enriched = [{**d, "name": by_id.get(d["id"], {}).get("name", d["id"]),
                  "shop": by_id.get(d["id"], {}).get("shop"),
                  "url": by_id.get(d["id"], {}).get("url")} for d in drops]
-    if webhook_url and enriched:
-        post_discord(webhook_url, build_discord_payload([], enriched))
-    put_last_cheapest(conn, current_map)
-    return enriched
+    delivered = True
+    if enriched:
+        delivered = bool(webhook_url) and post_discord(
+            webhook_url, build_discord_payload([], enriched))
+    if delivered:
+        put_last_cheapest(conn, current_map)
+    return enriched if delivered else []
 
 
 def get_last_watch_priced(conn: Database) -> set:
@@ -2506,17 +2554,21 @@ def notify_watch_live(conn: Database, webhook_url: Optional[str],
     "url"(opt), "target"(opt)} — the watches that ARE priced this scan. The
     "went live" event is the transition from unpriced to priced; a debut at or
     below target is already a new BUY (passed in `exclude_ids`) and rides that
-    section instead. Twin of notify_new_buys: always persists the current
-    priced set so enabling Discord later doesn't replay old debuts.
+    section instead. Twin of notify_new_buys: advances the stored priced set
+    only on delivery, so a webhook-less instance / a Discord outage never
+    silently drops a watch-live alert.
     """
     current_ids = [w["id"] for w in watch_items]
     new_ids = newly_priced_watch_ids(current_ids, get_last_watch_priced(conn),
                                      exclude_ids)
-    fresh = [w for w in watch_items if w["id"] in set(new_ids)]
-    if webhook_url and fresh:
-        post_discord(webhook_url, build_discord_payload([], None, fresh))
-    put_last_watch_priced(conn, current_ids)
-    return new_ids
+    delivered = True
+    if new_ids:
+        fresh = [w for w in watch_items if w["id"] in set(new_ids)]
+        delivered = bool(webhook_url) and post_discord(
+            webhook_url, build_discord_payload([], None, fresh))
+    if delivered:
+        put_last_watch_priced(conn, current_ids)
+    return new_ids if delivered else []
 
 
 def source_health(conn: Database, cfg: dict) -> list:
