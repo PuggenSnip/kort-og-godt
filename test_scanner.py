@@ -1129,6 +1129,83 @@ def test_get_config_migrates_stored_db_config(conn):
 
 
 # ---------------------------------------------------------------------------
+# v0.4 — plausibility band, headless scan, config v5
+# ---------------------------------------------------------------------------
+
+def test_plausibility_band_rejects_outliers(conn):
+    settings = dict(SETTINGS, record_fixtures=False)
+    body = load("epicpanda_product.html")     # parses to a real price
+    src = {"shop": "shopA", "method": "epicpanda", "url": "http://a"}
+    # Inside the band → recorded normally.
+    prod = make_product(triggers={"plausible_min_dkk": 100,
+                                  "plausible_max_dkk": 99999})
+    obs = scanner.scan_source(prod, src, _StubFetcher(body), settings)
+    assert obs.status == "ok" and obs.landed_dkk > 0
+    # Above the band → refused, no price recorded, honest error.
+    prod = make_product(triggers={"plausible_min_dkk": 100,
+                                  "plausible_max_dkk": 500})
+    obs = scanner.scan_source(prod, src, _StubFetcher(body), settings)
+    assert obs.status == "error"
+    assert "implausible" in obs.error and "band" in obs.error
+    assert obs.landed_dkk is None and obs.price_dkk is None
+    # Below the band → refused too.
+    prod = make_product(triggers={"plausible_min_dkk": 90000,
+                                  "plausible_max_dkk": 99999})
+    obs = scanner.scan_source(prod, src, _StubFetcher(body), settings)
+    assert obs.status == "error" and "implausible" in obs.error
+    # No band configured → unchanged behavior.
+    obs = scanner.scan_source(make_product(), src, _StubFetcher(body), settings)
+    assert obs.status == "ok"
+
+
+def test_run_headless_no_webhook_leaves_buy_state(conn):
+    # Headless run without a webhook must complete, snapshot, and leave the
+    # BUY-diff state EXACTLY as it was — a later app-side manual scan still
+    # gets to diff and ping (running the diff with nowhere to send it would
+    # silently eat those alerts).
+    # config_version = current, else get_config() would migrate the seed's
+    # real sources into this test config and run_scan would hit the network.
+    cfg = {"settings": dict(SETTINGS, record_fixtures=False,
+                            config_version=scanner.SEED_CONFIG_VERSION),
+           "products": [make_product(sources=[])]}
+    scanner.put_config(conn, cfg)
+    scanner.put_last_buy_set(conn, ["sentinel"])     # pre-existing app state
+    summary = scanner.run_headless(conn, webhook=None)
+    assert summary["scan_id"] > 0
+    assert summary["n_sources"] == 0            # no fetchable sources
+    assert summary["new_buy_ids"] is None       # diff skipped…
+    assert scanner.get_last_buy_set(conn) == {"sentinel"}   # …state untouched
+    row = conn.execute("SELECT finished_at FROM scans WHERE id = :i",
+                       {"i": summary["scan_id"]}).fetchone()
+    assert row and row["finished_at"]           # scan row completed
+    snap = conn.execute(
+        "SELECT COUNT(*) AS n FROM collection_snapshots").fetchone()
+    assert snap["n"] >= 1                       # snapshot recorded
+
+
+def test_migrate_config_v5_adds_kelz0r_etbs_and_bands():
+    stored = {
+        "settings": dict(scanner.DEFAULT_SETTINGS, config_version=4),
+        "products": [{
+            "id": "pitch-black-etb-en",
+            "name": "Pokémon Pitch Black ETB EN",
+            "sources": [{"shop": "symbizon.dk", "method": "shopify_search",
+                         "url": "https://symbizon.dk/"}],
+            "triggers": {"buy_below_dkk": 599, "plausible_max_dkk": 7777},
+        }],
+    }
+    assert scanner._migrate_config(stored) is True
+    p = next(q for q in stored["products"] if q["id"] == "pitch-black-etb-en")
+    assert any(s["shop"] == "kelz0r.dk" and s["method"] == "kelz0r_product"
+               for s in p["sources"])
+    # Band keys: absent one adopted from seed; user-set one NOT overwritten.
+    assert p["triggers"]["plausible_min_dkk"] == 300
+    assert p["triggers"]["plausible_max_dkk"] == 7777
+    assert p["triggers"]["buy_below_dkk"] == 599
+    assert stored["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
+# ---------------------------------------------------------------------------
 # v0.3 — br.dk: JSON-LD parser + preferred-shop tie-break
 # ---------------------------------------------------------------------------
 

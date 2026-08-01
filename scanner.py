@@ -127,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 4    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 5    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
@@ -165,6 +165,14 @@ def _migrate_config(cfg: dict) -> bool:
         for ss in sp.get("sources", []):
             if (ss.get("shop"), ss.get("method")) not in have:
                 p.setdefault("sources", []).append(ss)
+        # Plausibility bands: adopt seed values only where the user has not
+        # set their own. Strictly these two keys — buy/avoid triggers are
+        # user territory and are never touched.
+        seed_t = sp.get("triggers", {})
+        mine_t = p.setdefault("triggers", {})
+        for band_key in ("plausible_min_dkk", "plausible_max_dkk"):
+            if band_key in seed_t and band_key not in mine_t:
+                mine_t[band_key] = seed_t[band_key]
     for p in cfg.get("products", []):
         srcs = p.get("sources", [])
         kept = [s for s in srcs
@@ -1020,6 +1028,22 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
             obs.error = str(e)
             return obs
         obs.landed_dkk = obs.price_dkk + resolve_shipping_dkk(source, settings)
+        # Plausibility band (per-product, optional): with scheduled scans
+        # running unattended, a silent mis-parse (a pack price recorded as a
+        # box) could ping Discord with a bogus BUY and nobody would be at the
+        # screen to catch it. Outside the band → refuse, like price <= 0.
+        triggers = product.get("triggers", {})
+        lo = triggers.get("plausible_min_dkk")
+        hi = triggers.get("plausible_max_dkk")
+        if (lo is not None and obs.landed_dkk < float(lo)) or \
+           (hi is not None and obs.landed_dkk > float(hi)):
+            obs.error = (f"implausible landed price {obs.landed_dkk:.2f} kr "
+                         f"(outside plausible band {lo}–{hi}) — refusing to "
+                         "record")
+            obs.price_native = obs.price_dkk = obs.landed_dkk = None
+            obs.in_stock = None
+            obs.status = "error"
+            return obs
     obs.status = "ok"
     if settings.get("record_fixtures") and not fetch.from_cache:
         try:
@@ -2025,3 +2049,40 @@ def notify_new_buys(conn: Database, webhook_url: Optional[str],
         post_discord(webhook_url, build_discord_payload(fresh))
     put_last_buy_set(conn, current_ids)
     return new_ids
+
+
+def run_headless(conn: Database, webhook: Optional[str] = None,
+                 progress=None) -> dict:
+    """One unattended scan cycle — the scheduled (GitHub Actions) entry point.
+
+    Scan → collection snapshot → verdicts → Discord diff, exactly what the app
+    does after a manual SCAN. Two deliberate differences:
+      * fixtures are never recorded (CI filesystems are ephemeral), and
+      * without a webhook the BUY-diff state (last_buy_set) is left UNTOUCHED,
+        so a later app-side manual scan can still diff and ping — running the
+        diff here with nowhere to send it would silently eat those alerts.
+    """
+    cfg = get_config(conn)
+    cfg["settings"]["record_fixtures"] = False
+    scan_id, observations = run_scan(cfg, conn, progress)
+    try:
+        snapshot_collection(conn, cfg, get_collection(conn))
+    except Exception:       # noqa: BLE001 — tracking must never break the scan
+        pass
+    verdicts = {p["id"]: product_verdict(conn, p, cfg["settings"])
+                for p in cfg["products"]}
+    buys = [{"id": p["id"], "name": p["name"],
+             "reason": verdicts[p["id"]].reason, "url": verdicts[p["id"]].url}
+            for p in cfg["products"] if verdicts[p["id"]].code == "BUY"]
+    new_ids = notify_new_buys(conn, webhook, buys) if webhook else None
+    return {
+        "scan_id": scan_id,
+        "n_sources": len(observations),
+        "n_ok": sum(1 for o in observations if o.status == "ok"),
+        "n_failed": sum(1 for o in observations
+                        if o.status not in ("ok", "skipped")),
+        "verdict_counts": {c: sum(1 for v in verdicts.values() if v.code == c)
+                           for c in VERDICT_ORDER},
+        "buys": buys,
+        "new_buy_ids": new_ids,        # None = diff skipped (no webhook)
+    }

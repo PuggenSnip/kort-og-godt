@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 4,
+    "config_version": 5,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -78,7 +78,9 @@
       "triggers": {
         "buy_below_dkk": 1450,
         "cardmarket_buy_below_eur": 185,
-        "cardmarket_stable_days": 14
+        "cardmarket_stable_days": 14,
+        "plausible_min_dkk": 900,
+        "plausible_max_dkk": 3000
       },
       "notes": "BUY if Cardmarket ≤ €185 stable 14 days, or any DK shop ≤ 1450 kr."
     },
@@ -91,7 +93,11 @@
           "method": "shopify_search",
           "url": "https://mtgwebshop.dk/",
           "query": "ascended heroes elite trainer",
-          "exclude": ["pack", "blister", "sleeved"],
+          "exclude": [
+            "pack",
+            "blister",
+            "sleeved"
+          ],
           "ref_price_2026_07_29": 1499
         },
         {
@@ -99,6 +105,13 @@
           "method": "shopify_handle",
           "url": "https://cardx.dk/products/pokemon-tcg-acended-heroes-elite-trainer-box",
           "ref_price_2026_08_01": 1895
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-ascended-heroes-elite-trainer-box-mega-dragonitens-zekrom-boks-medboosters-promokort-tilbehor-p-367606.html",
+          "query": "ascended heroes elite trainer",
+          "ref_price_2026_08_01": 1699.95
         }
       ],
       "cardmarket": {
@@ -106,7 +119,9 @@
       },
       "triggers": {
         "buy_below_dkk": 1220,
-        "avoid_above_dkk": 1350
+        "avoid_above_dkk": 1350,
+        "plausible_min_dkk": 700,
+        "plausible_max_dkk": 2800
       },
       "notes": "BUY ≤ 1220 kr landed; AVOID > 1350. cardx.dk handle spells 'acended' — that is the shop's own slug, do not fix it."
     },
@@ -127,7 +142,9 @@
       },
       "triggers": {
         "buy_below_dkk": 1500,
-        "cardmarket_buy_below_eur": 195
+        "cardmarket_buy_below_eur": 195,
+        "plausible_min_dkk": 1200,
+        "plausible_max_dkk": 4500
       },
       "notes": "BUY ≤ €195 (~1500 kr) — only from a Cardmarket seller with 200+ rating (manual judgment). kelz0r no longer lists 151 JP sealed (checked 2026-08-01)."
     },
@@ -140,7 +157,12 @@
           "method": "shopify_search",
           "url": "https://mtgwebshop.dk/",
           "query": "prismatic evolutions elite trainer",
-          "exclude": ["pack", "blister", "sleeved", "surprise"],
+          "exclude": [
+            "pack",
+            "blister",
+            "sleeved",
+            "surprise"
+          ],
           "ref_price_2026_07_29": 1499
         },
         {
@@ -154,6 +176,13 @@
           "method": "shopify_handle",
           "url": "https://spilforsyningen.dk/products/pokemon-prismatic-evolutions-elite-trainer-box",
           "ref_price_2026_08_01": 1599.95
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-scarlet-violet-prismatic-evolutions-elite-trainer-box-eevee-boks-medboosters-promokort-tilbehor-p-336946.html",
+          "query": "prismatic evolutions elite trainer",
+          "ref_price_2026_08_01": 1414.95
         },
         {
           "shop": "pricecharting.com",
@@ -170,7 +199,9 @@
       "triggers": {
         "buy_below_dkk": 1099.99,
         "avoid_above_dkk": 1100,
-        "cardmarket_buy_below_eur": 139.99
+        "cardmarket_buy_below_eur": 139.99,
+        "plausible_min_dkk": 600,
+        "plausible_max_dkk": 2400
       },
       "notes": "Only interesting < €140 (~1100 kr), else AVOID. Buy triggers are set just under the round number so exactly 1100 kr / €140 is an AVOID, matching the strict '<' rule. Beware the 'Pokémon Center ETB' variant (~3500 kr) — exact handles avoid it."
     },
@@ -191,7 +222,9 @@
       },
       "triggers": {
         "buy_below_dkk": 1300,
-        "cardmarket_buy_below_eur": 140
+        "cardmarket_buy_below_eur": 140,
+        "plausible_min_dkk": 700,
+        "plausible_max_dkk": 2200
       },
       "notes": "BUY ≤ 1300 kr DK shop / ≤ €140 Cardmarket. Ceiling for a walk-in purchase: 1400 kr. kelz0r's FF Play Booster Display was delisted (only the single pack remains, checked 2026-08-01)."
     },
@@ -211,7 +244,9 @@
         "ref_price_2026_07_29_eur": 259
       },
       "triggers": {
-        "cardmarket_buy_below_eur": 200
+        "cardmarket_buy_below_eur": 200,
+        "plausible_min_dkk": 1200,
+        "plausible_max_dkk": 3800
       },
       "notes": "Primarily Cardmarket-driven (BUY ≤ €200). mtgwebshop.dk carries the Collector box as a DK reference (2499 kr, out of stock on 2026-07-31)."
     },
@@ -244,7 +279,9 @@
       },
       "triggers": {
         "buy_below_dkk": 1100,
-        "not_before": "2026-08-14"
+        "not_before": "2026-08-14",
+        "plausible_min_dkk": 700,
+        "plausible_max_dkk": 2200
       },
       "notes": "BUY ≤ 1100 kr after the 2026-08-14 release; never preorder above that. kelz0r flags 'Risiko for allokering' on this (2026-08-01)."
     },
@@ -270,14 +307,21 @@
           "method": "shopify_search",
           "url": "https://spilforsyningen.dk/",
           "query": "riftbound origins booster display",
-          "exclude": ["pack", "vendetta", "skirmish", "bundle"],
+          "exclude": [
+            "pack",
+            "vendetta",
+            "skirmish",
+            "bundle"
+          ],
           "ref_price_2026_08_01": 1699.95
         }
       ],
       "cardmarket": {},
       "triggers": {
         "buy_below_dkk": 1250,
-        "manual_buy_flag": "riot_eol"
+        "manual_buy_flag": "riot_eol",
+        "plausible_min_dkk": 700,
+        "plausible_max_dkk": 2600
       },
       "flags": {
         "riot_eol": false
@@ -310,7 +354,10 @@
         }
       ],
       "cardmarket": {},
-      "triggers": {},
+      "triggers": {
+        "plausible_min_dkk": 500,
+        "plausible_max_dkk": 2000
+      },
       "notes": "Rip-EV play, not an investment — watch the riporfliptcg EV% shown next to it."
     },
     {
@@ -322,7 +369,11 @@
           "method": "shopify_search",
           "url": "https://symbizon.dk/",
           "query": "pitch black elite trainer",
-          "exclude": ["pack", "blister", "sleeved"],
+          "exclude": [
+            "pack",
+            "blister",
+            "sleeved"
+          ],
           "ref_price_2026_07_29": 599
         },
         {
@@ -349,13 +400,22 @@
           "url": "https://www.br.dk/produkter/pokemon-tcg-pitch-black-elite-trainer-box/200380918/",
           "query": "pitch black elite trainer",
           "ref_price_2026_08_01": 599
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-pitch-black-elite-trainer-box-mega-darkraizarude-boks-medboosters-promokort-tilbehor-p-378372.html",
+          "query": "pitch black elite trainer",
+          "ref_price_2026_08_01": 669.95
         }
       ],
       "cardmarket": {
         "url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Pitch-Black-Elite-Trainer-Box?language=1"
       },
       "triggers": {
-        "buy_below_dkk": 599
+        "buy_below_dkk": 599,
+        "plausible_min_dkk": 300,
+        "plausible_max_dkk": 1300
       },
       "notes": "Fætter BR (br.dk) is now scanned directly (599 kr, fri fragt > 599) and is PREFERRED on exact price ties: 1 års ombytning på uåbnede varer = downside-hedged venue. symbizon also ships free > 599 kr (both seeded 0). BR was out of stock online on 2026-08-01 — physical BR stores may still have it."
     }

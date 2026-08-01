@@ -41,7 +41,29 @@ secrets; leave them unset for local single-user use. Optionally set
 `DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
 after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
-## What's new in v0.3 — wider, honest coverage
+## What's new in v0.4 — the scanner runs itself
+
+- **Scheduled scans + Discord push, no human required.** A GitHub Actions
+  cron (4×/day) runs the same headless scan the SCAN button does — prices
+  into the shared DB, collection value snapshotted, and **newly-flipped BUYs
+  pushed to Discord** even when nobody has the app open. Setup = two repo
+  secrets, see [DEPLOY.md](DEPLOY.md). Manual scans in the app still work
+  exactly as before; the BUY-diff state is shared so nothing double-pings.
+- **kelz0r Elite Trainer Boxes found and wired** (category tip from the
+  team): Ascended Heroes, Prismatic Evolutions and Pitch Black ETBs now have
+  live kelz0r sources — all validated in stock, with kelz0r's allocation-risk
+  flag detected. (Beware their `-case-` listings = a case OF ETBs; we link
+  the single boxes.)
+- **Price plausibility bands.** Optional per-product `plausible_min_dkk` /
+  `plausible_max_dkk` triggers (seeded wide on all products): a parsed price
+  outside the band is refused with an honest error instead of recorded — so
+  an unattended 5 AM scan can't ping Discord with a mis-parsed bogus BUY.
+- **Sourcing policy made explicit: buy Danish, watch global.** Buyable
+  sources (the ones that drive BUY links) are Danish shops only.
+  International sources (US pricecharting today; more later) are welcome as
+  `reference_only` — shown for full market perspective, never a BUY.
+
+## Earlier (v0.3) — wider, honest coverage
 
 - **Fætter BR (br.dk) is now a scanned source** — the old "not scannable"
   note was stale: BR's robots.txt only blocks its search, not product pages,

@@ -33,6 +33,18 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.4 (appen scanner selv)
+-------------------------------
+- Priserne scannes nu automatisk 4 gange i doegnet - og ved nye
+  KOEB-signaler faar I automatisk besked paa Discord, ogsaa naar ingen
+  har appen aaben.
+- Kelz0rs Elite Trainer Boxes overvaages nu ogsaa (tak for kategorien!).
+- Vanvittige priser (fejl-parsede) afvises automatisk, saa en natlig
+  scanning aldrig kan sende et falsk KOEB-signal.
+- Princip: VI KOEBER KUN i danske butikker - udenlandske priser vises
+  kun som reference, saa vi kender hele markedet.
+
+
 NYT I v0.3 (flere butikker + aerlige priser)
 --------------------------------------------
 - Tre nye danske butikker scannes nu: cardx.dk, flinamania.dk og

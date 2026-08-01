@@ -81,6 +81,27 @@ Only *newly*-BUY products are posted (the previous BUY set is remembered in the
 shared DB), so re-scanning with no change stays quiet. Scheduled/background
 alerts that fire without anyone opening the app are planned for v0.3.
 
+## 3c. Scheduled scans + automatic Discord alerts (v0.4)
+
+A GitHub Actions workflow (`.github/workflows/scheduled-scan.yml`) scans
+4×/day and pings Discord with newly-flipped BUYs — no one needs to open the
+app. To activate it, add **two repository secrets** on GitHub (repo →
+Settings → Secrets and variables → **Actions** → New repository secret):
+
+1. `DATABASE_URL` — the same Supabase connection string as the Streamlit
+   secret (prices land in the shared DB everyone sees).
+2. `DISCORD_WEBHOOK_URL` — the same webhook as in §3b.
+
+Then run it once by hand to confirm: repo → **Actions** → *Scheduled scan* →
+**Run workflow** — a green run with a scan summary in the log means it works.
+Without the secrets the workflow still runs green but scans into a throwaway
+database and pings nobody — set both.
+
+Notes: the cron and in-app scans share the BUY-diff state in the DB, so a
+flip is pinged exactly once regardless of who scanned. The schedule
+(05/11/17/23 UTC) stays within the app's politeness policy — think before
+increasing the frequency.
+
 ## 4. Daily use
 
 - All three open the URL, type the password, and use it normally.

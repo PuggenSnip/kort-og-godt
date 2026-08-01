@@ -1,0 +1,43 @@
+# Scheduled headless price scan -> shared DB (+ Discord ping on new BUYs).
+#
+# Politeness: 4 runs/day x ~30 sources at max 1 request/second/domain is well
+# inside the app's own policy (robots.txt respected, identifying User-Agent,
+# 1h response cache). Do not increase the frequency without rethinking that.
+#
+# Requires two repository Actions secrets (Settings -> Secrets and variables
+# -> Actions): DATABASE_URL (the shared Supabase Postgres, same value as the
+# Streamlit secret) and DISCORD_WEBHOOK_URL (optional -> no pings, scan only).
+name: Scheduled scan
+
+on:
+  schedule:
+    - cron: "17 5,11,17,23 * * *"   # 4x/day, off-peak minute
+  workflow_dispatch: {}             # manual runs from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scan
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python scan_cli.py
