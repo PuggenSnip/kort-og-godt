@@ -107,6 +107,11 @@ alerts that fire without anyone opening the app are planned for v0.3.
 - **v0.2 upgrade**: no manual database step. On startup the app adds the new
   `observations.added_by` column to an existing shared DB automatically and
   idempotently, and creates the new `feedback` table — you just push the code.
+- **v0.3 upgrade**: also no manual step. The stored watchlist config is
+  version-migrated on first load: the new shop sources are merged in
+  (add-only — your edited triggers/flags/notes are kept), the permanently
+  robots-blocked kelz0r search sources are removed, and per-shop shipping
+  estimates are seeded where you haven't set your own.
 - **Backup**: Supabase has its own backups; you can also use the app's
   *Export markdown report* and *Backup watchlist.json* buttons.
 - **Local/offline** still works: just run `Start Kort og Godt.bat` with no

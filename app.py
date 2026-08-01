@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.2"      # beta — bump this as the app matures
+APP_VERSION = "0.3"      # beta — bump this as the app matures
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
 try:
@@ -205,6 +205,16 @@ with tab_scan:
 
     # -- Results table ------------------------------------------------------
     st.subheader("Verdicts")
+    # Shops with a real shipping figure show plain "landed"; anything else is
+    # shelf price and gets a * so "landed" never quietly overpromises.
+    _ship_known = scanner.shipping_known_shops(cfg)
+
+    def landed_fmt(price, shop, decimals=2):
+        s = scanner.fmt_dkk(price, decimals)
+        if price is None or shop in _ship_known:
+            return s
+        return f"{s} *"
+
     rows = []
     verdicts: dict[str, scanner.Verdict] = {}
     for product in cfg["products"]:
@@ -224,7 +234,7 @@ with tab_scan:
         rows.append({
             "Product": product["name"],
             "Verdict": f"{v.emoji} {v.label}",
-            "Cheapest (landed)": scanner.fmt_dkk(v.cheapest_dkk),
+            "Cheapest (landed)": landed_fmt(v.cheapest_dkk, v.cheapest_shop),
             "Shop": v.cheapest_shop or "–",
             "Stock": ("på lager" if v.in_stock else
                       "–" if v.in_stock is None else "udsolgt"),
@@ -274,6 +284,10 @@ with tab_scan:
         column_config={"Link": st.column_config.LinkColumn(
             "Link", display_text="open shop")},
     )
+    if any((r["Cheapest (landed)"] or "").endswith("*") for r in rows):
+        st.caption("\\* shipping unknown for this shop — price shown is the "
+                   "shelf price. Set it in Config → settings → "
+                   "`shop_shipping_dkk` to make 'landed' honest.")
 
     st.download_button(
         "📄 Export markdown report",
@@ -304,7 +318,7 @@ with tab_scan:
                     if r["status"] == "ok" and r["currency"] == "%":
                         price = f"EV {r['price_native']:g} %"
                     elif r["status"] == "ok":
-                        price = scanner.fmt_dkk(r["landed_dkk"])
+                        price = landed_fmt(r["landed_dkk"], r["shop"])
                     elif r["status"] == "skipped":
                         price = "skipped"
                     else:

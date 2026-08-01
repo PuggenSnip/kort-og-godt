@@ -54,6 +54,11 @@ DEFAULT_SETTINGS = {
     # Roster of people sharing this deployment. Names are added from the UI's
     # "who are you?" step and attributed onto holdings and Cardmarket entries.
     "people": [],
+    # Flat per-shop shipping estimates (DKK) used when a source doesn't set its
+    # own shipping_dkk. Editable estimates — landed prices are only as honest
+    # as these numbers. A shop absent here counts 0 and the UI marks its
+    # landed price with * (shelf price, shipping unknown).
+    "shop_shipping_dkk": {},
 }
 
 
@@ -118,13 +123,72 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
+SEED_CONFIG_VERSION = 3    # bump when watchlist.json ships sources/settings
+                           # that existing DB configs should absorb
+
+
+def _migrate_config(cfg: dict) -> bool:
+    """Bring a stored (DB) config up to the bundled seed's version.
+
+    The DB config is the source of truth after first run, so new sources added
+    to watchlist.json in a release would otherwise never reach existing
+    deployments. This merge is deliberately conservative:
+      * ADD-only for products and sources — user-edited triggers, flags and
+        notes are never touched; an existing (shop, method) source is kept
+        as the user has it.
+      * The single exception: sources pointing at kelz0r's robots-blocked
+        search endpoint are dropped — they are permanently dead (policy skip)
+        and were replaced by allowed product-page sources in v0.3.
+      * Per-shop shipping estimates fill in only where the user hasn't set one.
+    Returns True when a migration ran (caller persists — the version stamp
+    itself must be saved so the seed file isn't re-read every load).
+    """
+    stored_ver = int(cfg.get("settings", {}).get("config_version") or 0)
+    if stored_ver >= SEED_CONFIG_VERSION:
+        return False
+    try:
+        seed = load_config()
+    except (OSError, ValueError):       # no bundled file (unusual) — skip
+        return False
+    by_id = {p.get("id"): p for p in cfg.get("products", [])}
+    for sp in seed.get("products", []):
+        p = by_id.get(sp.get("id"))
+        if p is None:
+            cfg.setdefault("products", []).append(sp)   # brand-new product
+            continue
+        have = {(s.get("shop"), s.get("method"))
+                for s in p.get("sources", [])}
+        for ss in sp.get("sources", []):
+            if (ss.get("shop"), ss.get("method")) not in have:
+                p.setdefault("sources", []).append(ss)
+    for p in cfg.get("products", []):
+        srcs = p.get("sources", [])
+        kept = [s for s in srcs
+                if "advanced_search_result.php" not in (s.get("url") or "")]
+        if len(kept) != len(srcs):
+            p["sources"] = kept
+    seed_ship = seed.get("settings", {}).get("shop_shipping_dkk", {})
+    mine = cfg.setdefault("settings", {}).setdefault("shop_shipping_dkk", {})
+    for shop, dkk in seed_ship.items():
+        if shop not in mine:
+            mine[shop] = dkk
+    # Always stamp + persist the version (even if nothing merged) so the
+    # migration — and its seed-file read — doesn't re-run on every load.
+    cfg["settings"]["config_version"] = SEED_CONFIG_VERSION
+    return True
+
+
 def get_config(conn) -> dict:
     """Shared watchlist config from the database (the source of truth when the
-    app runs against a shared DB). Seeded once from watchlist.json."""
+    app runs against a shared DB). Seeded once from watchlist.json; release
+    additions are merged in by _migrate_config (add-only, versioned)."""
     row = conn.execute(
         "SELECT value FROM app_config WHERE key = 'watchlist'").fetchone()
     if row and row["value"]:
-        return _normalize_settings(json.loads(row["value"]))
+        cfg = _normalize_settings(json.loads(row["value"]))
+        if _migrate_config(cfg):
+            put_config(conn, cfg)
+        return cfg
     cfg = load_config()                 # seed from the bundled file
     put_config(conn, cfg)
     return _normalize_settings(cfg)
@@ -729,6 +793,30 @@ def record_fixture(url: str, body: str) -> None:
         path.write_text(body, encoding="utf-8")
 
 
+def resolve_shipping_dkk(source: dict, settings: dict) -> float:
+    """Effective shipping for a source: its own shipping_dkk wins, else the
+    per-shop estimate in settings.shop_shipping_dkk, else 0 (unknown — the UI
+    marks such landed prices with * so 'landed' never quietly means 'shelf')."""
+    own = source.get("shipping_dkk")
+    if own not in (None, ""):
+        return float(own)
+    per_shop = settings.get("shop_shipping_dkk") or {}
+    return float(per_shop.get(source.get("shop"), 0) or 0)
+
+
+def shipping_known_shops(cfg: dict) -> set:
+    """Shops whose landed price includes a real shipping figure: any shop with
+    a per-shop estimate, plus shops whose every source sets shipping_dkk."""
+    settings = cfg.get("settings", {})
+    known = {s for s, v in (settings.get("shop_shipping_dkk") or {}).items()
+             if v not in (None, "")}
+    for p in cfg.get("products", []):
+        for src in p.get("sources", []):
+            if src.get("shipping_dkk") not in (None, ""):
+                known.add(src["shop"])
+    return known
+
+
 def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
                 settings: dict) -> Observation:
     """Fetch and parse one configured source. Never raises."""
@@ -848,7 +936,7 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
             # whole scan (scan_source promises never to raise).
             obs.error = str(e)
             return obs
-        obs.landed_dkk = obs.price_dkk + float(source.get("shipping_dkk", 0))
+        obs.landed_dkk = obs.price_dkk + resolve_shipping_dkk(source, settings)
     obs.status = "ok"
     if settings.get("record_fixtures") and not fetch.from_cache:
         try:

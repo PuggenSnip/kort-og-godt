@@ -33,6 +33,16 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.3 (flere butikker + aerlige priser)
+--------------------------------------------
+- Tre nye danske butikker scannes nu: cardx.dk, flinamania.dk og
+  spilforsyningen.dk - og Kelz0r scannes nu direkte paa produktsiderne
+  (deres soegeside er fortsat off-limits, men det er produktsiderne ikke).
+- "Landed"-prisen inkluderer nu et fragtestimat pr. butik (kan rettes i
+  Config). Star der en * ved prisen, er fragten ukendt, og du ser
+  hyldeprisen.
+
+
 NYT I v0.2 (delt brug)
 ----------------------
 - Når du åbner programmet, bliver du spurgt "Hvem bruger appen?" –

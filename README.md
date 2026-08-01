@@ -41,7 +41,36 @@ secrets; leave them unset for local single-user use. Optionally set
 `DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
 after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
-## What's new in v0.2 — shared-first
+## What's new in v0.3 — wider, honest coverage
+
+- **3 new Danish shops** (all independently verified live before adding):
+  **cardx.dk**, **flinamania.dk**, **spilforsyningen.dk** — exact box/ETB
+  listings only, matched by verified product handle. Notably: first-ever
+  redundancy for both Riftbound displays, three new Pitch Black ETB sources,
+  and a second Hobbit Play Booster source. (halmeshule.dk was checked too but
+  carries none of our exact SKUs — dropped rather than guessed.)
+- **kelz0r.dk unblocked the honest way.** Its robots.txt only forbids the
+  *search results* page — product and category pages are allowed. The dead
+  robots-blocked search sources are gone; validated direct product-page
+  sources replace them (Pitch Black Booster Box 1.849,95, Hobbit Play Booster
+  Display 1.379,95 — both live, in stock, allocation-risk flag detected).
+  More kelz0r products can be added in Config with method `kelz0r_product`
+  and a `…-p-NNN.html` URL.
+- **Landed prices are honest now.** Per-shop shipping estimates
+  (`settings.shop_shipping_dkk`, editable) feed every landed price; a shop
+  with no figure shows **landed\*** — explicitly shelf price, not a fake
+  all-in. BUY/AVOID triggers now compare true landed cost. symbizon.dk ships
+  free > 599 kr (seeded 0); other DK shops are seeded at a flat 45 kr
+  estimate — **tune these to reality in Config**.
+- **Release sources reach existing deployments automatically.** The stored DB
+  config is migrated add-only on startup (`config_version`): new sources are
+  merged in, dead robots-blocked ones dropped, and your edited triggers,
+  flags and notes are never touched.
+- Checked but deferred to v0.4: generic JSON-LD parser (Faraos, Pokemons.dk
+  and other non-Shopify shops), eBay Browse API, Swedish shops (SEK),
+  price-plausibility guard, source-health dashboard.
+
+## Earlier (v0.2) — shared-first
 
 - **Per-person attribution** — a lightweight "who are you?" name picker on
   entry (no passwords). Holdings and manual Cardmarket entries are stamped with
@@ -85,10 +114,12 @@ after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
 ## Data sources
 
-- **symbizon.dk, mtgwebshop.dk, rogerz.dk** — Shopify JSON
-  (`/products/<handle>.js`, fallback/search via `/products.json?limit=250`).
-- **kelz0r.dk** — HTML scrape (osCommerce). Parses Danish prices +
-  "På lager"; flags "Risiko for allokering" when present.
+- **symbizon.dk, mtgwebshop.dk, cardx.dk, flinamania.dk, spilforsyningen.dk,
+  rogerz.dk** — Shopify JSON (`/products/<handle>.js`, fallback/search via
+  `/products.json?limit=250`).
+- **kelz0r.dk** — HTML scrape (osCommerce) of *allowed* product pages
+  (`…-p-NNN.html`; robots.txt only forbids the search-results endpoint).
+  Parses Danish prices + "På lager"; flags "Risiko for allokering".
 - **epicpanda.dk** — HTML scrape, `1.999,95 DKK` format.
 - **pricecharting.com** — US reference for trends (`reference_only`: shown,
   never feeds the verdict).

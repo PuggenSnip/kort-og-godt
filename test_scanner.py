@@ -1020,6 +1020,111 @@ def test_build_discord_payload():
     assert "http://x" in p["content"]
 
 
+# ---------------------------------------------------------------------------
+# v0.3 — landed-cost honesty + config source migration
+# ---------------------------------------------------------------------------
+
+def test_resolve_shipping_source_override_wins():
+    settings = {"shop_shipping_dkk": {"shopA": 45}}
+    assert scanner.resolve_shipping_dkk(
+        {"shop": "shopA", "shipping_dkk": 29}, settings) == 29
+    assert scanner.resolve_shipping_dkk({"shop": "shopA"}, settings) == 45
+    assert scanner.resolve_shipping_dkk({"shop": "unknown.dk"}, settings) == 0
+    assert scanner.resolve_shipping_dkk({"shop": "shopA"}, {}) == 0
+
+
+def test_shipping_known_shops():
+    cfg = {
+        "settings": {"shop_shipping_dkk": {"a.dk": 45, "free.dk": 0}},
+        "products": [{"id": "p", "name": "P", "sources": [
+            {"shop": "b.dk", "method": "epicpanda", "url": "u",
+             "shipping_dkk": 39},
+            {"shop": "c.dk", "method": "epicpanda", "url": "u"},
+        ]}],
+    }
+    known = scanner.shipping_known_shops(cfg)
+    assert known == {"a.dk", "free.dk", "b.dk"}    # 0 is a KNOWN value (free)
+    assert "c.dk" not in known
+
+
+def test_scan_source_landed_uses_shop_default(conn):
+    # scan_source applies the per-shop estimate when the source has none.
+    settings = dict(SETTINGS, record_fixtures=False)
+    settings["shop_shipping_dkk"] = {"shopA": 50}
+    body = load("epicpanda_product.html")
+    fetcher = _StubFetcher(body)
+    src = {"shop": "shopA", "method": "epicpanda", "url": "http://a"}
+    obs = scanner.scan_source(make_product(), src, fetcher, settings)
+    assert obs.status == "ok"
+    assert obs.landed_dkk == pytest.approx(obs.price_dkk + 50)
+    # A per-source value beats the shop default.
+    obs2 = scanner.scan_source(
+        make_product(), {**src, "shipping_dkk": 10}, fetcher, settings)
+    assert obs2.landed_dkk == pytest.approx(obs2.price_dkk + 10)
+
+
+def test_migrate_config_adds_sources_preserves_edits():
+    # A stored config from v0.1/0.2: no version, dead kelz0r search source,
+    # user-edited trigger that must survive.
+    stored = {
+        "settings": dict(scanner.DEFAULT_SETTINGS),
+        "products": [{
+            "id": "pitch-black-booster-box-en",
+            "name": "Pokémon Pitch Black Booster Box EN",
+            "sources": [
+                {"shop": "symbizon.dk", "method": "shopify_handle",
+                 "url": "https://symbizon.dk/products/x"},
+                {"shop": "kelz0r.dk", "method": "kelz0r_search",
+                 "url": "https://www.kelz0r.dk/magic/advanced_search_result.php?x=1",
+                 "query": "pitch black display"},
+            ],
+            "triggers": {"buy_below_dkk": 1234},     # user-edited
+        }],
+    }
+    stored["settings"].pop("config_version", None)
+    assert scanner._migrate_config(stored) is True
+    p = stored["products"][0]
+    shops = {(s["shop"], s["method"]) for s in p["sources"]}
+    # Dead robots-blocked search source dropped; allowed replacement added.
+    assert ("kelz0r.dk", "kelz0r_search") not in shops
+    assert ("kelz0r.dk", "kelz0r_product") in shops
+    # New v0.3 shops merged in from the seed.
+    assert ("flinamania.dk", "shopify_handle") in shops
+    # User's symbizon source and edited trigger untouched.
+    assert p["triggers"]["buy_below_dkk"] == 1234
+    assert p["sources"][0]["url"] == "https://symbizon.dk/products/x"
+    # Seed products the stored config lacked are appended whole.
+    assert any(q["id"] == "mtg-hobbit-play-booster-box"
+               for q in stored["products"])
+    # Shipping estimates fill in; version stamped; second run is a no-op.
+    assert stored["settings"]["shop_shipping_dkk"]["kelz0r.dk"] == 45
+    assert stored["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+    assert scanner._migrate_config(stored) is False
+
+
+def test_migrate_config_respects_user_shipping():
+    stored = {"settings": dict(scanner.DEFAULT_SETTINGS), "products": []}
+    stored["settings"].pop("config_version", None)
+    stored["settings"]["shop_shipping_dkk"] = {"kelz0r.dk": 99}   # user's own
+    scanner._migrate_config(stored)
+    assert stored["settings"]["shop_shipping_dkk"]["kelz0r.dk"] == 99
+    assert stored["settings"]["shop_shipping_dkk"]["flinamania.dk"] == 45
+
+
+def test_get_config_migrates_stored_db_config(conn):
+    old = {"settings": {"usd_dkk": 6.4},
+           "products": [{"id": "pitch-black-etb-en", "name": "PB ETB",
+                         "sources": [], "triggers": {"buy_below_dkk": 599}}]}
+    scanner.put_config(conn, old)
+    cfg = scanner.get_config(conn)
+    p = next(q for q in cfg["products"] if q["id"] == "pitch-black-etb-en")
+    assert any(s["shop"] == "cardx.dk" for s in p["sources"])   # merged in
+    assert p["triggers"]["buy_below_dkk"] == 599                # preserved
+    # Persisted: reading again straight from the DB shows the stamp.
+    again = scanner.get_config(conn)
+    assert again["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
 def test_notify_new_buys_persists_and_diffs(conn):
     buys = [{"id": "p1", "name": "One"}, {"id": "p2", "name": "Two"}]
     # Empty webhook -> no network; still diffs against the stored set + persists.
