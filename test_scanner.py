@@ -1874,3 +1874,45 @@ def test_put_kv_upsert_no_gap(conn):
         "SELECT COUNT(*) AS n FROM app_config WHERE key = 'watchlist'"
     ).fetchone()["n"]
     assert n == 1                                      # exactly one row, no dup
+
+
+# ---------------------------------------------------------------------------
+# v1.2.1 — bulk observation fetch (perf: one query feeds every product)
+# ---------------------------------------------------------------------------
+
+def test_latest_observations_bulk_matches_per_product(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1400, product_id="p1")
+    put(conn, shop="shopB", method="kelz0r_product", price=1500,
+        product_id="p1", days_ago=1)
+    put(conn, shop="shopB", method="kelz0r_product", price=1450,
+        product_id="p1")                               # newer -> wins for shopB
+    put(conn, shop="shopA", method="epicpanda", price=999, product_id="p2")
+    allm = scanner.latest_observations_all(conn)
+    for pid in ("p1", "p2"):
+        direct = scanner.latest_observations(conn, pid)
+        pref = scanner.latest_observations(conn, pid, prefetched=allm)
+        assert [r["id"] for r in direct] == [r["id"] for r in pref]
+    # source filtering still applies through the prefetched path.
+    srcs = [{"shop": "shopA", "method": "epicpanda"}]
+    filt = scanner.latest_observations(conn, "p1", srcs, prefetched=allm)
+    assert {(r["shop"], r["method"]) for r in filt} == {("shopA", "epicpanda")}
+
+
+def test_product_verdict_prefetched_matches(conn):
+    put(conn, price=1400)                              # test-product, BUY
+    allm = scanner.latest_observations_all(conn)
+    v1 = scanner.product_verdict(conn, make_product(), SETTINGS)
+    v2 = scanner.product_verdict(conn, make_product(), SETTINGS, prefetched=allm)
+    assert v1.code == v2.code == "BUY"
+    assert v1.cheapest_dkk == v2.cheapest_dkk == 1400
+
+
+def test_source_health_prefetched_matches(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1000)
+    cfg = {"settings": SETTINGS, "products": [make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"}])]}
+    allm = scanner.latest_observations_all(conn)
+    direct = scanner.source_health(conn, cfg)
+    pref = scanner.source_health(conn, cfg, prefetched=allm)
+    assert [(r["shop"], r["status"], r["landed"]) for r in direct] == \
+           [(r["shop"], r["status"], r["landed"]) for r in pref]

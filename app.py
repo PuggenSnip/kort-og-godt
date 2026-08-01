@@ -6,6 +6,7 @@ It never purchases anything.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import date, datetime
@@ -16,7 +17,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "1.2.0"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.2.1"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -169,12 +170,74 @@ _require_login()
 conn = _db()
 cfg = scanner.get_config(conn)
 settings = cfg["settings"]
+
+# Person gate FIRST — it may st.stop(), so the login / name-pick screen never
+# pays for the heavy read-caching work below.
 person = _require_person(conn, cfg)
 with st.sidebar:
     st.caption(f"👤 You are **{person}**")
     if st.button("Switch user"):
         st.session_state.pop("_person", None)
         st.rerun()
+
+
+# ---- Read caching -------------------------------------------------------
+# Streamlit re-runs the WHOLE script (all three tabs) on every interaction, and
+# against the shared remote Postgres each query is a network round-trip. Without
+# caching a single render fires ~400 queries (verdicts, source health, per-
+# product history) — minutes over a remote DB. So the read-heavy views are
+# computed once per "data version" and reused until the data actually changes.
+def _data_version() -> str:
+    """Fingerprint of what the cached views depend on: the newest observation id
+    (bumped by every scan and Cardmarket entry) + a hash of the config. A change
+    to either busts the cache; otherwise every rerun is a cache hit."""
+    row = conn.execute("SELECT MAX(id) AS m FROM observations").fetchone()
+    max_obs = row["m"] if row and row["m"] is not None else 0
+    cfg_h = hashlib.md5(
+        json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)
+        .encode("utf-8")).hexdigest()[:16]
+    return f"{max_obs}:{cfg_h}"
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _view(version, _conn, _cfg):
+    """Everything the Scan + Config tabs need, computed in one pass (one bulk
+    observation query feeds all products) and cached by data version."""
+    s = _cfg["settings"]
+    latest = scanner.latest_observations_all(_conn)
+    prods = _cfg["products"]
+    return {
+        "latest": latest,
+        "verdicts": {p["id"]: scanner.product_verdict(_conn, p, s,
+                                                       prefetched=latest)
+                     for p in prods},
+        "health": scanner.source_health(_conn, _cfg, prefetched=latest),
+        "series": {p["id"]: (scanner.daily_cheapest_series(_conn, p["id"]),
+                             scanner.cardmarket_series(_conn, p["id"]))
+                   for p in prods},
+        "cm_stats": {p["id"]: scanner.cardmarket_stats(_conn, p, s)
+                     for p in prods},
+        "cm_entries": {p["id"]: scanner.list_cardmarket_entries(_conn, p["id"])
+                       for p in prods},
+    }
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _valuation(version, basis, col_key, _conn, _cfg, _collection):
+    return scanner.value_collection(_conn, _cfg, _collection, basis=basis)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _collection_series(version, _conn):
+    return scanner.collection_value_series(_conn)
+
+
+collection = scanner.get_collection(conn)
+_ver = _data_version()
+_col_key = hashlib.md5(
+    json.dumps(collection, sort_keys=True, ensure_ascii=False, default=str)
+    .encode("utf-8")).hexdigest()[:16]
+VIEW = _view(_ver, conn, cfg)
 
 
 def flash(msg: str) -> None:
@@ -299,6 +362,12 @@ with tab_scan:
             st.error("**Failed sources** (their products show UNVERIFIED):\n\n"
                      + "\n".join(f"- {f}" for f in failures))
 
+    # A scan mutates data in THIS run (it doesn't rerun), so the top-of-script
+    # VIEW is now stale — recompute it against the post-scan data version (every
+    # other mutation triggers st.rerun(), which refreshes VIEW at the top).
+    if scan_succeeded:
+        VIEW = _view(_data_version(), conn, cfg)
+
     # -- Results table ------------------------------------------------------
     st.subheader("Verdicts")
     # Shops with a real shipping figure show plain "landed"; anything else is
@@ -312,10 +381,9 @@ with tab_scan:
         return f"{s} *"
 
     rows = []
-    verdicts: dict[str, scanner.Verdict] = {}
+    verdicts: dict[str, scanner.Verdict] = VIEW["verdicts"]
     for product in cfg["products"]:
-        v = scanner.product_verdict(conn, product, settings)
-        verdicts[product["id"]] = v
+        v = verdicts[product["id"]]
         t = v.trend
 
         def arrow(avg):
@@ -422,12 +490,17 @@ with tab_scan:
                    "shelf price. Set it in Config → settings → "
                    "`shop_shipping_dkk` to make 'landed' honest.")
 
-    st.download_button(
-        "📄 Export markdown report",
-        data=scanner.export_markdown(cfg, conn),
-        file_name=f"kortoggodt-report-{datetime.now():%Y-%m-%d-%H%M}.md",
-        mime="text/markdown",
-    )
+    # Markdown report — generated ON DEMAND. It recomputes every verdict + the
+    # collection, so building it eagerly on every rerun was a big slice of the
+    # per-load query cost; now it only runs when you ask for it.
+    if st.button("📄 Generate markdown report"):
+        st.session_state["_md_report"] = scanner.export_markdown(cfg, conn)
+    if st.session_state.get("_md_report"):
+        st.download_button(
+            "⬇ Download report",
+            data=st.session_state["_md_report"],
+            file_name=f"kortoggodt-report-{datetime.now():%Y-%m-%d-%H%M}.md",
+            mime="text/markdown")
 
     # -- Per-product detail -------------------------------------------------
     st.subheader("Products")
@@ -444,7 +517,8 @@ with tab_scan:
 
             # Source table — every number traceable to URL + timestamp.
             latest = scanner.latest_observations(conn, product["id"],
-                                                 product.get("sources", []))
+                                                 product.get("sources", []),
+                                                 prefetched=VIEW["latest"])
             if latest:
                 src_rows = []
                 for r in latest:
@@ -476,7 +550,7 @@ with tab_scan:
                 st.info("No observations yet — hit SCAN.")
 
             # History sparkline.
-            series = scanner.daily_cheapest_series(conn, product["id"])
+            series = VIEW["series"][product["id"]][0]
             if len(series) >= 2:
                 st.line_chart({"cheapest landed DKK":
                                {d: p for d, p in series}},
@@ -489,7 +563,7 @@ with tab_scan:
             # overlaid as a flat line so "how far below target" reads at a glance.
             cm = product.get("cardmarket") or {}
             cm_below = product.get("triggers", {}).get("cardmarket_buy_below_eur")
-            cm_hist = scanner.cardmarket_series(conn, product["id"])
+            cm_hist = VIEW["series"][product["id"]][1]
             if len(cm_hist) >= 2:
                 st.caption("Cardmarket manual entries (€)")
                 chart = {"Cardmarket €":
@@ -500,7 +574,7 @@ with tab_scan:
                 st.line_chart(chart, height=180)
 
             # Compact stats line: latest, freshness, range, target status.
-            stats = scanner.cardmarket_stats(conn, product, settings)
+            stats = VIEW["cm_stats"][product["id"]]
             if stats:
                 bits = [f"latest **€{stats['latest_eur']:g}** "
                         f"({scanner.fmt_dkk(stats['latest_dkk'], 0)}) on "
@@ -554,7 +628,7 @@ with tab_scan:
                             st.rerun()
 
                 # Manage / correct entries — list recent ones, delete a bad one.
-                entries = scanner.list_cardmarket_entries(conn, product["id"])
+                entries = VIEW["cm_entries"][product["id"]]
                 if entries:
                     with st.expander(
                             f"✏️ Manage Cardmarket entries ({len(entries)})"):
@@ -577,7 +651,8 @@ with tab_scan:
 # ---------------------------------------------------------------------------
 
 with tab_collection:
-    collection = scanner.get_collection(conn)
+    # `collection` was already loaded once at the top (for the cache key); reuse
+    # it rather than re-querying on every rerun.
     prod_name_to_id = {p["name"]: p["id"] for p in cfg["products"]}
     id_to_name = {v: k for k, v in prod_name_to_id.items()}
     NONE_LABEL = "— (not on watchlist)"
@@ -708,7 +783,7 @@ with tab_collection:
         st.rerun()
 
     # -- Valuation summary --------------------------------------------------
-    val = scanner.value_collection(conn, cfg, collection, basis=basis)
+    val = _valuation(_ver, basis, _col_key, conn, cfg, collection)
     if val["n_items"] == 0 and val["n_sold"] == 0:
         st.info("No holdings yet — add rows above (type an item, optionally "
                 "link a watchlist product), then **Save collection**.")
@@ -861,7 +936,7 @@ with tab_collection:
             scanner.snapshot_collection(conn, cfg, collection)
             flash("Collection value snapshot saved")
             st.rerun()
-    series = scanner.collection_value_series(conn)
+    series = _collection_series(_ver, conn)
     if len(series) >= 2:
         chart = {
             "Market value": {s["taken_at"][:10]: s["total_value_dkk"]
@@ -888,7 +963,7 @@ with tab_config:
     st.subheader("Source health")
     st.caption("Every configured source and its latest scan — worst first, so "
                "a broken, stale, or drifting shop is visible at a glance.")
-    _health = scanner.source_health(conn, cfg)
+    _health = VIEW["health"]
     _rank_emoji = {0: "🔴", 1: "🟠", 2: "🟡", 3: "🟢"}
     _hrows = [{
         "": _rank_emoji.get(r["rank"], "⚪"),

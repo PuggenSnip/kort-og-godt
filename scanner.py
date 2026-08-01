@@ -1416,24 +1416,49 @@ def run_scan(cfg: dict, conn: Database,
 # ---------------------------------------------------------------------------
 
 def latest_observations(conn: Database, product_id: str,
-                        sources: Optional[list] = None) -> list[dict]:
+                        sources: Optional[list] = None,
+                        prefetched: Optional[dict] = None) -> list[dict]:
     """Latest observation per shop+method for a product (any status).
 
     If `sources` (the product's current config sources) is given, rows are
     restricted to the (shop, method) pairs still configured — so a source the
     user removed or renamed in the Config tab can never wedge the product in a
     stale BUY or a permanent UNVERIFIED from its last historical row.
+
+    `prefetched` is an optional {product_id: [rows]} map from
+    latest_observations_all() — pass it to serve every product's latest rows
+    from ONE query instead of a query per product (a big win over a remote DB,
+    where the app rebuilds these for ~30 products on every rerun).
     """
-    rows = conn.execute(
-        """SELECT o.* FROM observations o
-           JOIN (SELECT shop, method, MAX(id) AS mid FROM observations
-                 WHERE product_id = :pid GROUP BY shop, method) x
-             ON o.id = x.mid ORDER BY o.shop""",
-        {"pid": product_id}).fetchall()
+    if prefetched is not None:
+        rows = prefetched.get(product_id, [])
+    else:
+        rows = conn.execute(
+            """SELECT o.* FROM observations o
+               JOIN (SELECT shop, method, MAX(id) AS mid FROM observations
+                     WHERE product_id = :pid GROUP BY shop, method) x
+                 ON o.id = x.mid ORDER BY o.shop""",
+            {"pid": product_id}).fetchall()
     if sources is None:
         return rows
     allowed = {(s["shop"], s["method"]) for s in sources}
     return [r for r in rows if (r["shop"], r["method"]) in allowed]
+
+
+def latest_observations_all(conn: Database) -> dict:
+    """Latest observation per (product, shop, method) for EVERY product, in one
+    query — {product_id: [rows]}. Feed to latest_observations(prefetched=...) /
+    product_verdict(prefetched=...) / source_health(prefetched=...) so a whole
+    page render costs one query here instead of one per product."""
+    rows = conn.execute(
+        """SELECT o.* FROM observations o
+           JOIN (SELECT product_id, shop, method, MAX(id) AS mid
+                 FROM observations GROUP BY product_id, shop, method) x
+             ON o.id = x.mid ORDER BY o.product_id, o.shop""").fetchall()
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["product_id"], []).append(r)
+    return out
 
 
 def last_good_observation(conn: Database, product_id: str,
@@ -1639,7 +1664,7 @@ def _latest_cm_entry(conn: Database,
 
 
 def product_verdict(conn: Database, product: dict,
-                    settings: dict) -> Verdict:
+                    settings: dict, prefetched: Optional[dict] = None) -> Verdict:
     """Apply the verdict rules in the documented priority order.
 
     0. manual strategic flag set (e.g. Riot EOL news) -> BUY  (explicit human
@@ -1663,7 +1688,8 @@ def product_verdict(conn: Database, product: dict,
     """
     triggers = product.get("triggers", {})
     is_watch = bool(product.get("watch"))
-    latest = latest_observations(conn, product["id"], product.get("sources", []))
+    latest = latest_observations(conn, product["id"], product.get("sources", []),
+                                 prefetched=prefetched)
     trend = compute_trend(conn, product["id"], settings)
     v = Verdict(code="HOLD", reason="", trend=trend)
 
@@ -2599,12 +2625,16 @@ def notify_watch_live(conn: Database, webhook_url: Optional[str],
     return new_ids if delivered else []
 
 
-def source_health(conn: Database, cfg: dict) -> list:
+def source_health(conn: Database, cfg: dict,
+                  prefetched: Optional[dict] = None) -> list:
     """One row per configured (product, shop, method) source with its latest
     observation — for the Config-tab health dashboard. Each row carries a
     ``rank`` (lower = worse, for worst-first sorting) and a drift ``flag`` set
     when the latest good landed price swung wildly (> 2× / < 0.5×) vs the
     previous good one (a plausible-but-suspicious move a layout change can cause).
+
+    `prefetched` (from latest_observations_all) serves the latest rows from one
+    query instead of one per product.
     """
     settings = cfg.get("settings", {})
     stale_h = settings.get("stale_hours", 8)
@@ -2614,7 +2644,8 @@ def source_health(conn: Database, cfg: dict) -> list:
         sources = p.get("sources", [])
         is_watch = bool(p.get("watch"))
         latest = {(r["shop"], r["method"]): r
-                  for r in latest_observations(conn, p["id"], sources)}
+                  for r in latest_observations(conn, p["id"], sources,
+                                               prefetched=prefetched)}
         for s in sources:
             if s.get("method") == "cardmarket_manual":
                 continue

@@ -168,10 +168,17 @@ def _ensure_columns(engine: Engine) -> None:
 
 def connect(url=None) -> Database:
     resolved = _to_url(url)
-    connect_args = {"check_same_thread": False} \
-        if resolved.startswith("sqlite") else {}
-    engine = create_engine(resolved, connect_args=connect_args,
-                           pool_pre_ping=True, future=True)
+    is_sqlite = resolved.startswith("sqlite")
+    connect_args = {"check_same_thread": False} if is_sqlite else {}
+    # pool_pre_ping issues a liveness SELECT before EVERY checkout — a whole
+    # extra round-trip per query, which doubles the cost against a remote
+    # Postgres. Recycle connections older than the pooler's idle window instead:
+    # a stale connection is discarded and remade on next use, without a ping on
+    # every healthy query. (No effect on the local SQLite file pool.)
+    engine = create_engine(
+        resolved, connect_args=connect_args, future=True,
+        pool_pre_ping=False,
+        pool_recycle=(-1 if is_sqlite else 280))
     metadata.create_all(engine)
     _ensure_columns(engine)
     return Database(engine)
