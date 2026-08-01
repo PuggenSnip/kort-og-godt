@@ -6,6 +6,14 @@ shops, compares them against your triggers, stores history in SQLite and
 answers **BUY / WAIT / AVOID** per product. It never purchases anything, never
 logs in, never bypasses bot protection.
 
+## Versioning
+
+`0.MINOR.PATCH` (semver, pre-1.0). A **minor** bump is a feature wave
+(`0.4.0` = scheduled scans); a **patch** is a fix or small addition between
+waves (`0.4.1` = geo-priced-shop guard). **1.0** is a milestone we declare
+when the app is stable and feature-complete for the group — not a number we
+drift into, so a climbing minor doesn't imply we're "nearly there".
+
 ## Run
 
 **Easiest:** double-click the **Kort og Godt** shortcut on your Desktop

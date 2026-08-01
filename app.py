@@ -16,7 +16,9 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.4"      # beta — bump this as the app matures
+APP_VERSION = "0.4.1"    # semver 0.MINOR.PATCH — minor = feature wave,
+                         # patch = fixes between waves. 1.0 is declared, not
+                         # drifted into.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
 try:
