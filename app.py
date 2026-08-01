@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.8.0"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.8.1"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 
@@ -125,6 +125,26 @@ def last_scan_display() -> str:
         "SELECT finished_at FROM scans WHERE finished_at IS NOT NULL "
         "ORDER BY id DESC LIMIT 1").fetchone()
     return row["finished_at"].replace("T", " ") if row else "never"
+
+
+def pl_breakdown_rows(bucket_map: dict, label_col: str) -> list:
+    """Format a value_collection breakdown map (by_person/by_game/by_set) into
+    display rows — same columns for all three so they read consistently."""
+    out = []
+    for key in sorted(bucket_map):
+        b = bucket_map[key]
+        upct = (b["unrealized_pl"] / b["cost"] * 100) if b["cost"] else None
+        out.append({
+            label_col: key,
+            "Items": b["n_items"],
+            "Market value": scanner.fmt_dkk(b["market_value"], 0),
+            "Cost basis": scanner.fmt_dkk(b["cost"], 0),
+            "Unrealized P/L": scanner.fmt_dkk(b["unrealized_pl"], 0),
+            "U-ROI": (f"{upct:+.1f}%" if upct is not None else "–"),
+            "Sold": b["n_sold"],
+            "Realized P/L": scanner.fmt_dkk(b["realized_pl"], 0),
+        })
+    return out
 
 
 st.title("🃏 Kort og Godt")
@@ -615,26 +635,31 @@ with tab_collection:
                 "cost, so they count toward Market value but not P/L. Add a "
                 "unit cost to include them.")
 
-        # Per-person P/L breakdown (shared deployments). Shown when the data is
-        # actually attributed — a single "(unknown)" bucket adds no signal.
+        # P/L broken down three ways. Each is shown only when it actually splits
+        # the portfolio (more than one group), so single-row tables that just
+        # repeat the totals above are suppressed.
         bp = val["by_person"]
         if len(bp) > 1 or (bp and "(unknown)" not in bp):
-            prows = []
-            for name in sorted(bp):
-                b = bp[name]
-                ppct = (b["unrealized_pl"] / b["cost"] * 100) if b["cost"] else None
-                prows.append({
-                    "Person": name,
-                    "Items": b["n_items"],
-                    "Market value": scanner.fmt_dkk(b["market_value"], 0),
-                    "Cost basis": scanner.fmt_dkk(b["cost"], 0),
-                    "Unrealized P/L": scanner.fmt_dkk(b["unrealized_pl"], 0),
-                    "U-ROI": (f"{ppct:+.1f}%" if ppct is not None else "–"),
-                    "Sold": b["n_sold"],
-                    "Realized P/L": scanner.fmt_dkk(b["realized_pl"], 0),
-                })
             st.markdown("**By person**")
-            st.dataframe(prows, use_container_width=True, hide_index=True)
+            st.dataframe(pl_breakdown_rows(bp, "Person"),
+                         use_container_width=True, hide_index=True)
+
+        bg = val["by_game"]
+        if len(bg) > 1:
+            st.markdown("**By game**")
+            st.dataframe(pl_breakdown_rows(bg, "Game"),
+                         use_container_width=True, hide_index=True)
+            # Total P/L (unrealized + realized) per game — the portfolio at a glance.
+            game_pl = {g: bg[g]["unrealized_pl"] + bg[g]["realized_pl"]
+                       for g in bg}
+            if any(v for v in game_pl.values()):
+                st.bar_chart({"Total P/L (DKK)": game_pl}, height=200)
+
+        bs = val["by_set"]
+        if len(bs) > 1:
+            st.markdown("**By set**")
+            st.dataframe(pl_breakdown_rows(bs, "Set"),
+                         use_container_width=True, hide_index=True)
 
         # Per-holding breakdown, optionally scoped to one person ("just me").
         present = sorted({(r.added_by or "(unknown)") for r in val["rows"]})
@@ -715,7 +740,10 @@ with tab_collection:
                     "Realized P/L": scanner.fmt_dkk(yb["pl"], 0),
                     "ROI": (f"{ypct:+.1f}%" if ypct is not None else "–"),
                 })
-            st.markdown("**Realized by year**")
+            st.markdown("**Realized by tax year**")
+            st.caption("Grouped by the calendar year of the sale date — the "
+                       "Danish tax year. Sales with no parseable date fall under "
+                       "'unknown'.")
             st.dataframe(yrows, use_container_width=True, hide_index=True)
             year_pl = {str(k): rby[k]["pl"] for k in keys if k != "unknown"}
             if year_pl:

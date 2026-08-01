@@ -1842,6 +1842,41 @@ def current_value(conn: Database, product: dict, settings: dict,
     return float(best["landed_dkk"]), best["shop"], best["observed_at"]
 
 
+# Game classification for portfolio grouping. Keyword → canonical game name,
+# checked in order; the shop naming in this watchlist is consistent enough that
+# a name prefix is reliable, and a product/holding can override with an explicit
+# "game" field.
+_GAME_KEYWORDS = (
+    ("Pokémon", ("pokémon", "pokemon")),
+    ("Magic", ("mtg", "magic")),
+    ("Riftbound", ("riftbound",)),
+    ("One Piece", ("one piece",)),
+    ("Lorcana", ("lorcana",)),
+    ("Yu-Gi-Oh!", ("yu-gi-oh", "yugioh")),
+    ("Gundam", ("gundam",)),
+)
+
+
+def infer_game(name: str) -> str:
+    """Best-effort game from a product/holding name; 'Other' when unrecognised."""
+    n = (name or "").lower()
+    for game, kws in _GAME_KEYWORDS:
+        if any(k in n for k in kws):
+            return game
+    return "Other"
+
+
+def product_game(product) -> str:
+    """The game a product (dict) or a plain name (str) belongs to, for portfolio
+    grouping. An explicit "game" field on a product wins; else inferred by name."""
+    if isinstance(product, dict):
+        explicit = product.get("game")
+        if explicit:
+            return str(explicit)
+        return infer_game(product.get("name") or product.get("id") or "")
+    return infer_game(str(product or ""))
+
+
 @dataclass
 class HoldingValue:
     name: str
@@ -1852,6 +1887,8 @@ class HoldingValue:
     observed_at: Optional[str]
     status: str                        # "valued" | "unverified"
     added_by: Optional[str] = None     # who added the holding (shared use)
+    game: str = "Other"                # for per-game portfolio grouping
+    set_key: str = ""                  # product name (linked) or holding name
 
     @property
     def line_value(self) -> Optional[float]:
@@ -1885,6 +1922,11 @@ def value_holding(conn: Database, holding: dict,
     unit_cost = float(unit_cost) if unit_cost not in (None, "") else None
     pid = holding.get("product_id")
     name = holding.get("name") or pid or "(unnamed)"
+    # Grouping keys: a linked holding takes its game + set label from the
+    # watchlist product; an unlinked one infers the game from its own name.
+    linked = product_by_id.get(pid) if pid else None
+    game = product_game(linked) if linked else product_game(name)
+    set_key = (linked.get("name") or pid) if linked else name
 
     value = source = seen = None
     if pid and pid in product_by_id:
@@ -1899,7 +1941,8 @@ def value_holding(conn: Database, holding: dict,
     return HoldingValue(name=name, quantity=qty, unit_cost_dkk=unit_cost,
                         unit_value_dkk=value,
                         value_source=source or "", observed_at=seen,
-                        status=status, added_by=holding.get("added_by") or None)
+                        status=status, added_by=holding.get("added_by") or None,
+                        game=game, set_key=set_key)
 
 
 def _holding_is_sold(h: dict) -> bool:
@@ -1919,7 +1962,9 @@ def _sold_year(sold_date: str) -> Optional[int]:
     return year if 1990 <= year <= 2100 else None
 
 
-def _empty_person_bucket() -> dict:
+def _empty_pl_bucket() -> dict:
+    """A zeroed unrealized+realized aggregate — reused for the by-person,
+    by-game and by-set breakdowns (same shape, different grouping key)."""
     return {"n_items": 0, "n_valued": 0, "market_value": 0.0, "cost": 0.0,
             "unrealized_pl": 0.0, "n_sold": 0, "realized_proceeds": 0.0,
             "realized_cost": 0.0, "realized_pl": 0.0}
@@ -1977,13 +2022,18 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
         roi_pct = (realized / cost_basis * 100.0
                    if cost_basis and realized is not None else None)
         sold_date = h.get("sold_date") or ""
+        s_pid = h.get("product_id")
+        s_linked = product_by_id.get(s_pid) if s_pid else None
+        s_name = h.get("name") or s_pid or "(unnamed)"
         sold_rows.append({
-            "name": h.get("name") or h.get("product_id") or "(unnamed)",
+            "name": s_name,
             "quantity": qty, "unit_cost_dkk": unit_cost,
             "sold_price_dkk": sold_price, "proceeds": proceeds,
             "realized_pl": realized, "sold_date": sold_date,
             "roi_pct": roi_pct, "year": _sold_year(sold_date),
             "added_by": h.get("added_by") or None,
+            "game": product_game(s_linked) if s_linked else product_game(s_name),
+            "set": (s_linked.get("name") or s_pid) if s_linked else s_name,
         })
     realized_proceeds = sum(r["proceeds"] for r in sold_rows)
     # P/L and its cost basis only cover sold rows that have a recorded cost —
@@ -1992,11 +2042,15 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
     realized_cost = sum(r["unit_cost_dkk"] * r["quantity"] for r in with_cost)
     realized_pl = sum(r["realized_pl"] for r in with_cost)
 
-    # Per-person breakdown for shared deployments: the same unrealized/realized
-    # aggregates, bucketed by who added each holding. Unattributed → "(unknown)".
+    # Breakdowns: the same unrealized/realized aggregates bucketed three ways —
+    # by who added each holding (shared use), by game, and by set (product).
+    # One pass over held rows and one over sold rows fills all three.
     by_person: dict[str, dict] = {}
-    for r in rows:
-        b = by_person.setdefault(r.added_by or "(unknown)", _empty_person_bucket())
+    by_game: dict[str, dict] = {}
+    by_set: dict[str, dict] = {}
+
+    def _add_held(bucket_map: dict, key: str, r: HoldingValue) -> None:
+        b = bucket_map.setdefault(key, _empty_pl_bucket())
         b["n_items"] += 1
         if r.status == "valued":
             b["n_valued"] += 1
@@ -2004,14 +2058,23 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
             if r.line_cost is not None:
                 b["cost"] += r.line_cost
                 b["unrealized_pl"] += r.line_pl
-    for sr in sold_rows:
-        b = by_person.setdefault(sr["added_by"] or "(unknown)",
-                                 _empty_person_bucket())
+
+    def _add_sold(bucket_map: dict, key: str, sr: dict) -> None:
+        b = bucket_map.setdefault(key, _empty_pl_bucket())
         b["n_sold"] += 1
         b["realized_proceeds"] += sr["proceeds"]
         if sr["unit_cost_dkk"] is not None:
             b["realized_cost"] += sr["unit_cost_dkk"] * sr["quantity"]
             b["realized_pl"] += sr["realized_pl"]
+
+    for r in rows:
+        _add_held(by_person, r.added_by or "(unknown)", r)
+        _add_held(by_game, r.game or "Other", r)
+        _add_held(by_set, r.set_key or r.name, r)
+    for sr in sold_rows:
+        _add_sold(by_person, sr["added_by"] or "(unknown)", sr)
+        _add_sold(by_game, sr["game"] or "Other", sr)
+        _add_sold(by_set, sr["set"] or sr["name"], sr)
 
     # Realized P/L rolled up by calendar year (unparseable dates → "unknown").
     realized_by_year: dict = {}
@@ -2041,6 +2104,8 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
         "realized_cost": realized_cost,
         "realized_pl": realized_pl,
         "by_person": by_person,
+        "by_game": by_game,
+        "by_set": by_set,
         "realized_by_year": realized_by_year,
     }
 

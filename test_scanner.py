@@ -1603,3 +1603,64 @@ def test_run_headless_includes_watch_live_key(conn):
     assert "watch_live" in summary
     assert summary["watch_live"] is None            # diff skipped (no webhook)
     assert summary["verdict_counts"].get("WATCH", 0) == 1
+
+
+# ---------------------------------------------------------------------------
+# v0.8.1 — portfolio: per-game / per-set P/L breakdowns
+# ---------------------------------------------------------------------------
+
+def test_infer_and_product_game():
+    assert scanner.infer_game("Pokémon Pitch Black ETB EN") == "Pokémon"
+    assert scanner.infer_game("MTG The Hobbit Play Booster Box") == "Magic"
+    assert scanner.infer_game("Riftbound Origins Display EN") == "Riftbound"
+    assert scanner.infer_game("Some Random Sealed Thing") == "Other"
+    assert scanner.infer_game("") == "Other"
+    # An explicit "game" field wins over the name; else infer; str works too.
+    assert scanner.product_game({"name": "MTG X", "game": "Custom"}) == "Custom"
+    assert scanner.product_game({"name": "Pokémon Y"}) == "Pokémon"
+    assert scanner.product_game("Riftbound Z") == "Riftbound"
+
+
+def test_value_collection_by_game_and_by_set(conn):
+    # Two linked Pokémon products (one also has a sold lot) + one unlinked Magic
+    # holding valued from a manual value. Breakdowns must split correctly by
+    # game and by set, aggregating held (unrealized) and sold (realized).
+    put(conn, shop="pA", method="epicpanda", price=800, product_id="pkmn-a")
+    put(conn, shop="pB", method="epicpanda", price=1600, product_id="pkmn-b")
+    cfg = {"settings": SETTINGS, "products": [
+        {"id": "pkmn-a", "name": "Pokémon Set A ETB",
+         "sources": [{"shop": "pA", "method": "epicpanda", "url": "http://a"}],
+         "triggers": {}},
+        {"id": "pkmn-b", "name": "Pokémon Set B Box",
+         "sources": [{"shop": "pB", "method": "epicpanda", "url": "http://b"}],
+         "triggers": {}},
+    ]}
+    collection = {"settings": {"valuation_basis": "replacement"}, "holdings": [
+        {"id": "h1", "name": "Pokémon Set A ETB", "product_id": "pkmn-a",
+         "quantity": 1, "unit_cost_dkk": 500},
+        {"id": "h2", "name": "Pokémon Set B Box", "product_id": "pkmn-b",
+         "quantity": 1, "unit_cost_dkk": 1500},
+        {"id": "h3", "name": "MTG Something Box", "product_id": None,
+         "quantity": 1, "manual_value_dkk": 900, "unit_cost_dkk": 700},
+        {"id": "h4", "name": "Pokémon Set A ETB", "product_id": "pkmn-a",
+         "quantity": 2, "unit_cost_dkk": 400, "sold_price_dkk": 600,
+         "sold_date": "2026-05-01"},
+    ]}
+    v = scanner.value_collection(conn, cfg, collection)
+
+    bg = v["by_game"]
+    assert set(bg) == {"Pokémon", "Magic"}
+    assert bg["Pokémon"]["n_items"] == 2                       # h1, h2 (h4 sold)
+    assert bg["Pokémon"]["market_value"] == pytest.approx(2400)   # 800 + 1600
+    assert bg["Pokémon"]["unrealized_pl"] == pytest.approx(400)   # 300 + 100
+    assert bg["Pokémon"]["n_sold"] == 1
+    assert bg["Pokémon"]["realized_pl"] == pytest.approx(400)     # (600-400)*2
+    assert bg["Magic"]["market_value"] == pytest.approx(900)
+    assert bg["Magic"]["unrealized_pl"] == pytest.approx(200)     # 900 - 700
+
+    bs = v["by_set"]
+    # Linked holdings key by the product name; the unlinked one by its own name.
+    assert bs["Pokémon Set A ETB"]["market_value"] == pytest.approx(800)  # h1
+    assert bs["Pokémon Set A ETB"]["realized_pl"] == pytest.approx(400)   # h4
+    assert bs["Pokémon Set B Box"]["market_value"] == pytest.approx(1600)
+    assert bs["MTG Something Box"]["market_value"] == pytest.approx(900)
