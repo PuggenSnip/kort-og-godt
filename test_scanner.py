@@ -1732,3 +1732,46 @@ def test_cardmarket_stats_stale_blocks_meets(conn):
         conn, p, dict(SETTINGS, cardmarket_max_age_days=30))
     assert stats["stale"] is True
     assert stats["meets_threshold"] is False               # ≤150 but stale
+
+
+# ---------------------------------------------------------------------------
+# v0.9.1 — conditional watch-target fix migration (shelf MSRP → landed MSRP)
+# ---------------------------------------------------------------------------
+
+def _seed_watch_config(version, targets):
+    """A stored config carrying the 3 watch products at the given targets."""
+    seed = scanner.load_config()
+    cfg = json.loads(json.dumps(seed))
+    cfg["settings"]["config_version"] = version
+    for pid, val in targets.items():
+        next(p for p in cfg["products"] if p["id"] == pid)["triggers"][
+            "buy_below_dkk"] = val
+    return cfg
+
+
+def _target(cfg, pid):
+    return next(p for p in cfg["products"] if p["id"] == pid)["triggers"][
+        "buy_below_dkk"]
+
+
+def test_migrate_v11_fixes_provisional_watch_targets():
+    # A stored v10 config still at the OLD shelf targets is bumped to landed.
+    cfg = _seed_watch_config(10, {"pkmn-30th-celebration-etb-en": 799,
+                                  "pkmn-30th-celebration-bundle-en": 499,
+                                  "pkmn-30th-celebration-upc-en": 2199})
+    assert scanner._migrate_config(cfg) is True
+    assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+    assert _target(cfg, "pkmn-30th-celebration-etb-en") == 850
+    assert _target(cfg, "pkmn-30th-celebration-bundle-en") == 550
+    assert _target(cfg, "pkmn-30th-celebration-upc-en") == 2250
+
+
+def test_migrate_v11_preserves_user_edited_target():
+    # A user who changed the ETB target keeps it; the untouched ones still fix.
+    cfg = _seed_watch_config(10, {"pkmn-30th-celebration-etb-en": 800,   # edited
+                                  "pkmn-30th-celebration-bundle-en": 499,
+                                  "pkmn-30th-celebration-upc-en": 2199})
+    scanner._migrate_config(cfg)
+    assert _target(cfg, "pkmn-30th-celebration-etb-en") == 800           # kept
+    assert _target(cfg, "pkmn-30th-celebration-bundle-en") == 550        # fixed
+    assert _target(cfg, "pkmn-30th-celebration-upc-en") == 2250

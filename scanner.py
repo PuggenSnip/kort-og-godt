@@ -134,9 +134,19 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 10   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 11   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
-                           # (v10: notify-watch launch items)
+                           # (v10: notify-watch launch items;
+                           #  v11: 30th-Celebration watch targets → landed MSRP)
+
+# v11 conditional trigger fix: product_id -> (old shelf target, new landed
+# target). _migrate_config bumps a watch's buy_below_dkk from old→new ONLY when
+# it is still the old value (never clobbering a user's own edit). See there.
+_WATCH_TARGET_FIX_V11 = {
+    "pkmn-30th-celebration-etb-en": (799, 850),
+    "pkmn-30th-celebration-bundle-en": (499, 550),
+    "pkmn-30th-celebration-upc-en": (2199, 2250),
+}
 
 
 def _migrate_config(cfg: dict) -> bool:
@@ -200,6 +210,20 @@ def _migrate_config(cfg: dict) -> bool:
         for shop, val in seed_map.items():
             if shop not in mine:
                 mine[shop] = val
+    # v11: the three 30th-Celebration watch targets were seeded at the SHELF
+    # MSRP, but the verdict compares the LANDED price (shelf + shipping), so at
+    # MSRP they read WATCH and never fired a BUY. Bump each to its landed-MSRP
+    # target — but ONLY where the stored value is still the old shelf figure, so
+    # a user's own edit in Config → Triggers is never overwritten. (Triggers are
+    # otherwise strictly user territory in this merge; this is a one-time,
+    # conditional correction of a value the tool itself seeded wrong.)
+    for p in cfg.get("products", []):
+        fix = _WATCH_TARGET_FIX_V11.get(p.get("id"))
+        if fix:
+            old, new = fix
+            t = p.setdefault("triggers", {})
+            if t.get("buy_below_dkk") == old:
+                t["buy_below_dkk"] = new
     # Always stamp + persist the version (even if nothing merged) so the
     # migration — and its seed-file read — doesn't re-run on every load.
     cfg["settings"]["config_version"] = SEED_CONFIG_VERSION

@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 10,
+    "config_version": 11,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -759,12 +759,12 @@
         }
       ],
       "triggers": {
-        "buy_below_dkk": 799,
+        "buy_below_dkk": 850,
         "not_before": "2026-09-16",
         "plausible_min_dkk": 300,
         "plausible_max_dkk": 2000
       },
-      "notes": "WATCH (launch 2026-09-16, first-ever global simultaneous Pokémon release). Notify-watch: both sources are preorder/out-of-stock now (Rogerz 799, Kelz0r Nidorina 799,95) — verdict stays ⏳ WATCH and pings when one goes in-stock ≤ target. Target 799 = DK retail; PROVISIONAL pending the owner's watchlist targets. Kelz0r's is the Nidorina art variant; Rogerz a generic ETB listing (30th Celebration ETBs ship in per-character variants at the same price tier). Both flag 'Risiko for allokering'. Validated live 2026-08-01."
+      "notes": "WATCH (launch 2026-09-16, first-ever global simultaneous Pokémon release). MD#11 — 'MSRP only'. Notify-watch: both sources are preorder/out-of-stock now (Rogerz 799, Kelz0r Nidorina 799,95) — verdict stays ⏳ WATCH and pings when one goes in-stock ≤ target. Target 850 = landed MSRP (shelf ~799 + ~45 shipping) so a preorder opening AT MSRP fires a BUY (the verdict compares landed, not shelf); an above-MSRP scalper listing (~899 → ~944 landed) correctly stays WATCH. Kelz0r's is the Nidorina art variant; Rogerz a generic ETB listing (30th Celebration ETBs ship in per-character variants at the same price tier). Both flag 'Risiko for allokering'. Validated live 2026-08-01."
     },
     {
       "id": "pkmn-30th-celebration-bundle-en",
@@ -779,12 +779,12 @@
         }
       ],
       "triggers": {
-        "buy_below_dkk": 499,
+        "buy_below_dkk": 550,
         "not_before": "2026-10-02",
         "plausible_min_dkk": 150,
         "plausible_max_dkk": 1200
       },
-      "notes": "WATCH (launch 2026-10-02). Rogerz preorder/out-of-stock at 499 — pings when in-stock ≤ target. Target 499 = DK retail; PROVISIONAL pending the owner's target. The 6-pack bundle, not a display. Validated live 2026-08-01."
+      "notes": "WATCH (launch 2026-10-02). MD#12 — 'MSRP; all-foil set = every pack hits'. Rogerz preorder/out-of-stock at 499 — pings when in-stock ≤ target. Target 550 = landed MSRP (shelf ~499 + ~45 shipping) so it fires AT MSRP (verdict compares landed, not shelf). The 6-pack bundle, not a display. Validated live 2026-08-01."
     },
     {
       "id": "pkmn-30th-celebration-upc-en",
@@ -806,12 +806,51 @@
         }
       ],
       "triggers": {
-        "buy_below_dkk": 2199,
+        "buy_below_dkk": 2250,
         "not_before": "2026-11-06",
         "plausible_min_dkk": 1000,
         "plausible_max_dkk": 5000
       },
-      "notes": "WATCH (launch 2026-11-06). A single Ultra-Premium Collection box, sold per variant — Day (Espeon) / Night (Umbreon). Rogerz's listing exposes Day & Night as variants at 2199 kr each (NOT a pair); Kelz0r lists the Night/Umbreon box at ~2280. Both preorder/out-of-stock; cheapest single box wins. Target 2199 = DK retail per box; PROVISIONAL pending the owner's target. Both flag 'Risiko for allokering'. Validated live 2026-08-01."
+      "notes": "WATCH (launch 2026-11-06). MD#8/#9 — 'MSRP preorder window, hit Notify NOW' (Night/Umbreon priority 1, Day/Espeon priority 2). A single Ultra-Premium Collection box, sold per variant — Day (Espeon) / Night (Umbreon). Rogerz's listing exposes Day & Night as variants at 2199 kr each (NOT a pair); Kelz0r lists the Night/Umbreon box at ~2280. Both preorder/out-of-stock; cheapest single box wins. Target 2250 = landed MSRP (Rogerz ~2199 + ~45 shipping) so a Rogerz box at MSRP fires; Kelz0r's ~2280 (~2325 landed) is above MSRP and correctly stays WATCH (verdict compares landed, not shelf). Both flag 'Risiko for allokering'. Validated live 2026-08-01."
+    },
+    {
+      "id": "pkmn-30th-celebration-jp-m6a-box",
+      "name": "Pokémon 30th Celebration JP Box (MEGA M6a)",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-mega-m6a-expansion-pack-30th-celebration-japansk-boosters-p-382123.html",
+          "query": "m6a 30th celebration",
+          "ref_price_2026_08_01": 1999.95
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 700,
+        "not_before": "2026-09-16",
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 3000
+      },
+      "notes": "WATCH — MD#13 (JP 30th-anniversary box, MEGA M6a, 20 packs, 'cleanest hold'). Only DK listing is Kelz0r (p-382123), currently 1999,95 preorder/out-of-stock with allocation risk — so it sits ⏳ WATCH far above the ≤700 target and would ping only if it ever came in-stock ≤700 (or a 'went live' ping when it first restocks). Target 700 = MD's explicit ≤700 landed. Japanese set but bought from a Danish shop, so buy-Danish holds. 'm6a' in the query guards against the M6 (Storm Emeralda) page. Validated live 2026-08-01."
+    },
+    {
+      "id": "pkmn-30th-celebration-pc-etb-en",
+      "name": "Pokémon 30th Celebration Pokémon Center ETB EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-30th-celebration-pokemon-center-elite-trainer-box-nidorina-boks-med-boosters-promokort-tilbehor-p-385656.html",
+          "query": "30th celebration pokemon center"
+        }
+      ],
+      "triggers": {
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 2500
+      },
+      "notes": "WATCH — MD#10 (Pokémon Center ETB, 11 boosters; 'MSRP only' — the Ascended Heroes PC ETB went 7,7×). Only DK listing is Kelz0r (p-385656), an unpriced [PREORDER]: the page carries a 9999,95 placeholder price that the plausibility band (400–2500) correctly REFUSES, so it stays ⏳ WATCH and pings when a REAL price + stock appear. NO buy target on purpose — the PC ETB MSRP isn't published and I won't guess; set buy_below_dkk (≈ landed MSRP) once it prices, or just act on the 'went live' ping. Distinct from the regular Nidorina ETB (p-385654, 9 boosters); 'center' in the query keeps them apart. Validated live 2026-08-01."
     }
   ]
 }
