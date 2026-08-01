@@ -1802,6 +1802,23 @@ def test_migrate_v11_preserves_user_edited_target():
     assert _target(cfg, "pkmn-30th-celebration-upc-en") == 2250
 
 
+def test_migrate_v12_mega_brave_target_conditional():
+    MB = "mega-brave-jp-booster-box"
+    # Still at the old shelf value -> bumped to the landed target.
+    cfg = _seed_watch_config(11, {})
+    next(p for p in cfg["products"] if p["id"] == MB)["triggers"][
+        "buy_below_dkk"] = 900
+    scanner._migrate_config(cfg)
+    assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+    assert _target(cfg, MB) == 945
+    # A user edit is preserved.
+    cfg2 = _seed_watch_config(11, {})
+    next(p for p in cfg2["products"] if p["id"] == MB)["triggers"][
+        "buy_below_dkk"] = 920
+    scanner._migrate_config(cfg2)
+    assert _target(cfg2, MB) == 920
+
+
 # ---------------------------------------------------------------------------
 # v1.0 — pre-release audit fixes
 # ---------------------------------------------------------------------------
