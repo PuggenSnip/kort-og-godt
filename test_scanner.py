@@ -376,7 +376,7 @@ def test_live_fixture_smoke(path):
     """Recorded real responses must parse correctly (or error honestly)."""
     body = path.read_text(encoding="utf-8")
     name = path.name
-    if "br-dk" in name:
+    if "br-dk" in name or "andcards" in name:      # JSON-LD product pages
         p = scanner.parse_jsonld_product(body)
         assert p.error is None and p.price > 0
     elif "kelz0r" in name and "-p-" in name:

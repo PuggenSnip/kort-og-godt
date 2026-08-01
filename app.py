@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.5.0"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.5.1"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 

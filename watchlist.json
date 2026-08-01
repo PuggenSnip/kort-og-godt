@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 7,
+    "config_version": 8,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -642,6 +642,19 @@
           "method": "shopify_handle",
           "url": "https://spilforsyningen.dk/products/magic-the-gathering-the-hobbit-collector-booster-display",
           "ref_price_2026_08_01": 5999.95
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/magic-the-gathering-the-hobbit-collector-booster-box-display-collector-boosters-box-topper-p-380306.html",
+          "query": "hobbit collector",
+          "ref_price_2026_08_01": 5999.95
+        },
+        {
+          "shop": "mtgwebshop.dk",
+          "method": "shopify_handle",
+          "url": "https://mtgwebshop.dk/products/magic-the-gathering-the-hobbit-collector-booster-box",
+          "ref_price_2026_08_01": 5799
         }
       ],
       "triggers": {
@@ -650,6 +663,61 @@
         "plausible_max_dkk": 8000
       },
       "notes": "MD#39: BUY ≤4000 post-release (Tolkien premium real; ~5.999 preorder now)."
+    },
+    {
+      "id": "mtg-final-fantasy-collector-booster-box",
+      "name": "MTG Final Fantasy Collector Booster Box",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/magic-the-gathering-final-fantasy-collector-booster-box",
+          "ref_price_2026_08_01": 12799
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 5220,
+        "plausible_min_dkk": 3000,
+        "plausible_max_dkk": 16000
+      },
+      "notes": "MD#35: grail alert — any legit listing ≤ ~5220 kr (€700). Market €850+ and rising; DK ask ~12.799 kr, so realistically a watch, not a near-term buy."
+    },
+    {
+      "id": "mtg-marvel-collector-booster-box",
+      "name": "MTG Marvel Super Heroes Collector Booster Box",
+      "sources": [
+        {
+          "shop": "spilforsyningen.dk",
+          "method": "shopify_handle",
+          "url": "https://spilforsyningen.dk/products/magic-the-gathering-marvel-super-heroes-collector-booster-display",
+          "ref_price_2026_08_01": 2899.95
+        },
+        {
+          "shop": "epicpanda.dk",
+          "method": "epicpanda",
+          "url": "https://epicpanda.dk/shop/magic-marvel-super-heroes-collector-booster-box-37715p.html",
+          "ref_price_2026_08_01": 2999.95
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/magic-the-gathering-marvel-super-heroes-collector-booster-box-display-collector-boosters-p-372801.html",
+          "query": "marvel collector",
+          "ref_price_2026_08_01": 3094.95
+        },
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/magic-the-gathering-marvel-super-heroes-collector-booster-box",
+          "ref_price_2026_08_01": 3199
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1865,
+        "plausible_min_dkk": 1200,
+        "plausible_max_dkk": 5000
+      },
+      "notes": "MD#36: BUY ≤ ~1865 kr (€250) once Marvel-arc fatigue hits. Market ~€290. Four DK sources."
     }
   ]
 }

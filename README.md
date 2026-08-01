@@ -51,12 +51,13 @@ after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
 ## What's new in v0.5 — the big watchlist
 
-- **12 new tracked products** (10 → 22), every source validated live through
+- **14 new tracked products** (10 → 24), every source validated live through
   the real scanner before shipping — Chaos Rising ETB + Booster Box, Perfect
   Order Box, Phantasmal Flames ETB, Pitch Black & Ascended Heroes Booster
   Bundles, three Japanese boxes (Mega Brave, Abyss Eye, Nihil Zero), Marvel
-  Super Heroes Play Box, Riftbound Vendetta display, and the Hobbit Collector
-  Box. Triggers encode the research targets; plausibility bands seeded on all.
+  Super Heroes Play Box, Riftbound Vendetta display, and the Hobbit / Final
+  Fantasy / Marvel **Collector** Boxes. Triggers encode the research targets;
+  plausibility bands seeded on all. Several Collector boxes carry 3–4 shops.
 - **Two new Danish shops, zero new scraper code**: **rogerz.dk** (Shopify →
   `shopify_handle`) and **andcards.dk** (WooCommerce → the existing
   `jsonld_product` method). Both checked for geo-pricing (neither is).

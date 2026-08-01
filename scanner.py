@@ -127,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 7    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 8    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
