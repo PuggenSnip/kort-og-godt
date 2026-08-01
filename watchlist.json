@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 12,
+    "config_version": 13,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -128,29 +128,6 @@
         "plausible_max_dkk": 2800
       },
       "notes": "BUY ≤ 1220 kr landed; AVOID > 1350. cardx.dk handle spells 'acended' — that is the shop's own slug, do not fix it."
-    },
-    {
-      "id": "pokemon-151-jp-booster-box",
-      "name": "Pokémon 151 JP Booster Box (sv2a)",
-      "sources": [
-        {
-          "shop": "mtgwebshop.dk",
-          "method": "shopify_handle",
-          "url": "https://mtgwebshop.dk/products/scarlet-violet-151-booster-display-box-japansk",
-          "ref_price_2026_07_31": 2899
-        }
-      ],
-      "cardmarket": {
-        "url": "https://www.cardmarket.com/en/Pokemon/Products/Booster-Boxes/Pokemon-Card-151-Booster-Box?language=7",
-        "ref_price_2026_07_29_eur": 248
-      },
-      "triggers": {
-        "buy_below_dkk": 1500,
-        "cardmarket_buy_below_eur": 195,
-        "plausible_min_dkk": 1200,
-        "plausible_max_dkk": 4500
-      },
-      "notes": "BUY ≤ €195 (~1500 kr) — only from a Cardmarket seller with 200+ rating (manual judgment). kelz0r no longer lists 151 JP sealed (checked 2026-08-01)."
     },
     {
       "id": "prismatic-evolutions-etb-en",
@@ -544,75 +521,6 @@
       "notes": "MD#33: BUY ≤775 (best ME-era odds: SIR 1/70, God Pack ~1/950). The 6-pack bundle, not the display/case."
     },
     {
-      "id": "mega-brave-jp-booster-box",
-      "name": "Pokémon Mega Brave JP Booster Box",
-      "sources": [
-        {
-          "shop": "rogerz.dk",
-          "method": "shopify_handle",
-          "url": "https://rogerz.dk/products/pokemon-tcg-mega-brave-booster-box-japansk-onesize-standard",
-          "ref_price_2026_08_01": 999
-        },
-        {
-          "shop": "andcards.dk",
-          "method": "jsonld_product",
-          "url": "https://www.andcards.dk/vare/mega-brave-booster-box-30-boosters/",
-          "query": "mega brave",
-          "ref_price_2026_08_01": 899
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 945,
-        "plausible_min_dkk": 500,
-        "plausible_max_dkk": 2000
-      },
-      "notes": "MD#18 v2: BUY at MSRP ~900 shelf (US ~$135; Mega Lucario MUR + Lillie SAR). Target 945 = landed (shelf 900 + ~45 shipping) so andcards 899 (landed 944) fires. andcards added v1.1 (899, in stock 2 left); rogerz 999. Validated live 2026-08-01."
-    },
-    {
-      "id": "abyss-eye-jp-booster-box",
-      "name": "Pokémon Abyss Eye JP Booster Box",
-      "sources": [
-        {
-          "shop": "rogerz.dk",
-          "method": "shopify_handle",
-          "url": "https://rogerz.dk/products/pokemon-tcg-abyss-eye-booster-box-japansk-mega-evolution",
-          "ref_price_2026_08_01": 995
-        },
-        {
-          "shop": "andcards.dk",
-          "method": "jsonld_product",
-          "url": "https://www.andcards.dk/vare/abyss-eye-m5-booster-box-30-packs/",
-          "query": "abyss eye",
-          "ref_price_2026_08_01": 649
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 900,
-        "plausible_min_dkk": 400,
-        "plausible_max_dkk": 2000
-      },
-      "notes": "MD#22 v2: BUY ≤900 landed. Japanese Abyss Eye (M5) = JP counterpart of EN Pitch Black. andcards added v1.1 — 649 SALE (was 899, in stock), the strongest JP buy on the list; rogerz 995. Validated live 2026-08-01. (Band min lowered to 400 for the 649 sale.)"
-    },
-    {
-      "id": "nihil-zero-jp-booster-box",
-      "name": "Pokémon Nihil Zero JP Booster Box",
-      "sources": [
-        {
-          "shop": "andcards.dk",
-          "method": "jsonld_product",
-          "url": "https://www.andcards.dk/vare/nihil-zero-booster-box-japansk/",
-          "query": "nihil zero",
-          "ref_price_2026_08_01": 599
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 600,
-        "plausible_min_dkk": 300,
-        "plausible_max_dkk": 1500
-      },
-      "notes": "MD#23: BUY ≤600 (RIP)."
-    },
-    {
       "id": "mtg-marvel-play-booster-box",
       "name": "MTG Marvel Super Heroes Play Booster Box",
       "sources": [
@@ -828,27 +736,6 @@
       "notes": "WATCH (launch 2026-11-06). MD#8/#9 — 'MSRP preorder window, hit Notify NOW' (Night/Umbreon priority 1, Day/Espeon priority 2). A single Ultra-Premium Collection box, sold per variant — Day (Espeon) / Night (Umbreon). Rogerz's listing exposes Day & Night as variants at 2199 kr each (NOT a pair); Kelz0r lists the Night/Umbreon box at ~2280. Both preorder/out-of-stock; cheapest single box wins. Target 2250 = landed MSRP (Rogerz ~2199 + ~45 shipping) so a Rogerz box at MSRP fires; Kelz0r's ~2280 (~2325 landed) is above MSRP and correctly stays WATCH (verdict compares landed, not shelf). Both flag 'Risiko for allokering'. Validated live 2026-08-01."
     },
     {
-      "id": "pkmn-30th-celebration-jp-m6a-box",
-      "name": "Pokémon 30th Celebration JP Box (MEGA M6a)",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-mega-m6a-expansion-pack-30th-celebration-japansk-boosters-p-382123.html",
-          "query": "m6a 30th celebration",
-          "ref_price_2026_08_01": 1999.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 700,
-        "not_before": "2026-09-16",
-        "plausible_min_dkk": 400,
-        "plausible_max_dkk": 3000
-      },
-      "notes": "WATCH — MD#13 (JP 30th-anniversary box, MEGA M6a, 20 packs, 'cleanest hold'). Only DK listing is Kelz0r (p-382123), currently 1999,95 preorder/out-of-stock with allocation risk — so it sits ⏳ WATCH far above the ≤700 target and would ping only if it ever came in-stock ≤700 (or a 'went live' ping when it first restocks). Target 700 = MD's explicit ≤700 landed. Japanese set but bought from a Danish shop, so buy-Danish holds. 'm6a' in the query guards against the M6 (Storm Emeralda) page. Validated live 2026-08-01."
-    },
-    {
       "id": "pkmn-30th-celebration-pc-etb-en",
       "name": "Pokémon 30th Celebration Pokémon Center ETB EN",
       "watch": true,
@@ -865,31 +752,6 @@
         "plausible_max_dkk": 2500
       },
       "notes": "WATCH — MD#10 (Pokémon Center ETB, 11 boosters; 'MSRP only' — the Ascended Heroes PC ETB went 7,7×). Only DK listing is Kelz0r (p-385656), an unpriced [PREORDER]: the page carries a 9999,95 placeholder price that the plausibility band (400–2500) correctly REFUSES, so it stays ⏳ WATCH and pings when a REAL price + stock appear. NO buy target on purpose — the PC ETB MSRP isn't published and I won't guess; set buy_below_dkk (≈ landed MSRP) once it prices, or just act on the 'went live' ping. Distinct from the regular Nidorina ETB (p-385654, 9 boosters); 'center' in the query keeps them apart. Validated live 2026-08-01."
-    },
-    {
-      "id": "mega-symphonia-jp-booster-box",
-      "name": "Pokémon Mega Symphonia JP Booster Box",
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-mega-m1s-expansion-pack-mega-symphonia-japansk-boosters-p-358127.html",
-          "query": "mega symphonia",
-          "ref_price_2026_08_01": 797.95
-        },
-        {
-          "shop": "rogerz.dk",
-          "method": "shopify_handle",
-          "url": "https://rogerz.dk/products/pokemon-tcg-mega-symphonia-booster-box-japansk",
-          "ref_price_2026_08_01": 899
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 895,
-        "plausible_min_dkk": 400,
-        "plausible_max_dkk": 2000
-      },
-      "notes": "MD#19 v2 (FIRED): JP Mega Evolution M1S (Gardevoir SAR). Target 895 = landed (shelf ~850 + shipping). Kelz0r 797,95 in stock (landed ~843) -> BUY; rogerz 899. Validated live 2026-08-01."
     },
     {
       "id": "ygo-rarity-collection-5-ra05",
@@ -927,131 +789,6 @@
         "plausible_max_dkk": 3000
       },
       "notes": "MD#42 v2: One Piece OP-15 'Adventure on Kami's Island' ENGLISH box (24 packs). RIP at US-parity. Target 1545 = landed (shelf ~1500 + shipping). mtgwebshop 1499 in stock (landed ~1544) -> BUY at parity. NOTE: the ENGLISH box (JP OP-15 is far cheaper but a different product). Validated live 2026-08-01."
-    },
-    {
-      "id": "mega-dream-ex-jp-booster-box",
-      "name": "Pokémon Mega Dream ex JP Booster Box",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "andcards.dk",
-          "method": "jsonld_product",
-          "url": "https://www.andcards.dk/vare/mega-dream-ex-japanese-booster-box/",
-          "query": "mega dream",
-          "ref_price_2026_08_01": 1089
-        },
-        {
-          "shop": "rogerz.dk",
-          "method": "shopify_handle",
-          "url": "https://rogerz.dk/products/pokemon-tcg-mega-dream-ex-booster-box",
-          "ref_price_2026_08_01": 1199
-        },
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-mega-m2a-high-class-pack-mega-dream-japansk-boosters-p-366894.html",
-          "query": "mega dream",
-          "ref_price_2026_08_01": 1174.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 845,
-        "plausible_min_dkk": 500,
-        "plausible_max_dkk": 2000
-      },
-      "notes": "WATCH -- MD#20 v2 (RIP, revised <=800 shelf; old <=650 unrealistic in DK). JP M2a High Class, 10-pack. Target 845 = landed (shelf 800 + shipping). Cheapest now andcards 1089 (landed ~1134) -> above target, parked WATCH; pings on a dip. rogerz 1199, kelz0r 1174,95. Validated live 2026-08-01."
-    },
-    {
-      "id": "inferno-x-jp-booster-box",
-      "name": "Pokémon Inferno X JP Booster Box",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "mtgwebshop.dk",
-          "method": "shopify_handle",
-          "url": "https://mtgwebshop.dk/products/inferno-x-japansk-booster-box",
-          "ref_price_2026_08_01": 1199
-        },
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-mega-expansion-pack-infernojapansk-boosters-p-362891.html",
-          "query": "inferno",
-          "ref_price_2026_08_01": 1549.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 1045,
-        "plausible_min_dkk": 600,
-        "plausible_max_dkk": 2200
-      },
-      "notes": "WATCH -- MD#21 v2 (INVEST: MUR Mega Charizard X ~$900 chase). JP Mega Evolution M2. Target 1045 = landed (shelf 1000 + shipping). Cheapest now mtgwebshop 1199 (landed ~1244) -> above target, parked WATCH. kelz0r 1549,95. Validated live 2026-08-01."
-    },
-    {
-      "id": "terastal-festival-ex-jp-booster-box",
-      "name": "Pokémon Terastal Festival ex JP Booster Box",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-scarlet-violet-sv8a-high-class-pack-terastal-festival-japansk-boosters-p-338554.html",
-          "query": "terastal festival",
-          "ref_price_2026_08_01": 1279.95
-        },
-        {
-          "shop": "rogerz.dk",
-          "method": "shopify_handle",
-          "url": "https://rogerz.dk/products/pokemon-terastal-festival-booster-box",
-          "ref_price_2026_08_01": 999
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 1045,
-        "plausible_min_dkk": 600,
-        "plausible_max_dkk": 2000
-      },
-      "notes": "WATCH -- MD#25 v2 (INVEST: high-class SV8a ages well). Target 1045 = landed (shelf 1000 + shipping). kelz0r 1279,95 in stock (landed ~1325) -> above target, parked WATCH; rogerz 999 was SOLD OUT. Validated live 2026-08-01."
-    },
-    {
-      "id": "black-bolt-jp-booster-box",
-      "name": "Pokémon Black Bolt JP Booster Box",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-scarlet-violet-sv11b-expansion-pack-black-bolt-japansk-boosters-p-354119.html",
-          "query": "black bolt",
-          "ref_price_2026_08_01": 1549.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 1245,
-        "plausible_min_dkk": 800,
-        "plausible_max_dkk": 2200
-      },
-      "notes": "WATCH -- MD#24 v2 (INVEST: post-hype dip vs 2025 peaks). JP SV11B. Target 1245 = landed (shelf 1200 + shipping). Only DK source kelz0r 1549,95 (landed ~1595) -> above target, parked WATCH. Validated live 2026-08-01."
-    },
-    {
-      "id": "white-flare-jp-booster-box",
-      "name": "Pokémon White Flare JP Booster Box",
-      "watch": true,
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/pokemon-display-booster-box-scarlet-violet-sv11w-expansion-pack-white-flare-japansk-boosters-p-354120.html",
-          "query": "white flare",
-          "ref_price_2026_08_01": 1499.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 1245,
-        "plausible_min_dkk": 800,
-        "plausible_max_dkk": 2200
-      },
-      "notes": "WATCH -- MD#24 v2 (INVEST: post-hype dip vs 2025 peaks). JP SV11W (Black Bolt's sibling). Target 1245 = landed (shelf 1200 + shipping). Only DK source kelz0r 1499,95 (landed ~1545) -> above target, parked WATCH. Validated live 2026-08-01."
     }
   ]
 }

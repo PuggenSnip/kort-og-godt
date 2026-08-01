@@ -141,11 +141,12 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 12   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 13   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
-                           #  v12: watchlist-v2 sync — Mega Brave landed target)
+                           #  v12: watchlist-v2 sync — Mega Brave landed target;
+                           #  v13: remove all Japanese products (group preference))
 
 # Conditional trigger corrections: product_id -> (old value, new value).
 # _migrate_config bumps buy_below_dkk from old→new ONLY when it is still the old
@@ -157,9 +158,27 @@ _CONDITIONAL_TARGET_FIXES = {
     "pkmn-30th-celebration-etb-en": (799, 850),
     "pkmn-30th-celebration-bundle-en": (499, 550),
     "pkmn-30th-celebration-upc-en": (2199, 2250),
-    # v12 — Mega Brave: shelf 900 → landed 945 so andcards 899 (landed 944) fires.
-    "mega-brave-jp-booster-box": (900, 945),
 }
+
+# v13 — products removed from the list (the first REMOVE operation in this
+# otherwise add-only merge). The group does not want Japanese-language products,
+# so all 11 JP boxes are dropped. Only ids the tool lists here are removed; a
+# user's own products are untouched. A collection holding linked to a removed
+# product keeps its row + link and simply loses live valuation until/unless the
+# product ever returns.
+_REMOVED_PRODUCT_IDS = frozenset({
+    "pokemon-151-jp-booster-box",
+    "mega-brave-jp-booster-box",
+    "abyss-eye-jp-booster-box",
+    "nihil-zero-jp-booster-box",
+    "pkmn-30th-celebration-jp-m6a-box",
+    "mega-symphonia-jp-booster-box",
+    "mega-dream-ex-jp-booster-box",
+    "inferno-x-jp-booster-box",
+    "terastal-festival-ex-jp-booster-box",
+    "black-bolt-jp-booster-box",
+    "white-flare-jp-booster-box",
+})
 
 
 def _migrate_config(cfg: dict) -> bool:
@@ -234,6 +253,12 @@ def _migrate_config(cfg: dict) -> bool:
             t = p.setdefault("triggers", {})
             if t.get("buy_below_dkk") == old:
                 t["buy_below_dkk"] = new
+    # v13 — drop retired products (only the ids in _REMOVED_PRODUCT_IDS; user
+    # products are untouched). Collection holdings linked to a removed product
+    # keep their row + link; they just lose live valuation while it's absent.
+    if _REMOVED_PRODUCT_IDS:
+        cfg["products"] = [p for p in cfg.get("products", [])
+                           if p.get("id") not in _REMOVED_PRODUCT_IDS]
     # Always stamp + persist the version (even if nothing merged) so the
     # migration — and its seed-file read — doesn't re-run on every load.
     cfg["settings"]["config_version"] = SEED_CONFIG_VERSION

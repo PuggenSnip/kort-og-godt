@@ -1802,21 +1802,21 @@ def test_migrate_v11_preserves_user_edited_target():
     assert _target(cfg, "pkmn-30th-celebration-upc-en") == 2250
 
 
-def test_migrate_v12_mega_brave_target_conditional():
-    MB = "mega-brave-jp-booster-box"
-    # Still at the old shelf value -> bumped to the landed target.
-    cfg = _seed_watch_config(11, {})
-    next(p for p in cfg["products"] if p["id"] == MB)["triggers"][
-        "buy_below_dkk"] = 900
+def test_migrate_v13_removes_japanese_products():
+    # A stored pre-v13 config still carrying JP products has exactly those
+    # removed by migration; every other product is preserved.
+    cfg = _seed_watch_config(12, {})                 # seed already has no JP
+    jp_ids = ["mega-brave-jp-booster-box", "abyss-eye-jp-booster-box",
+              "pokemon-151-jp-booster-box"]
+    for jid in jp_ids:                               # inject as a v12 DB would have
+        cfg["products"].append({"id": jid, "name": jid, "sources": [],
+                                "triggers": {}})
+    kept = {p["id"] for p in cfg["products"] if p["id"] not in jp_ids}
     scanner._migrate_config(cfg)
+    after = {p["id"] for p in cfg["products"]}
+    assert not (after & set(jp_ids))                 # all injected JP gone
+    assert kept <= after                             # everything else kept
     assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
-    assert _target(cfg, MB) == 945
-    # A user edit is preserved.
-    cfg2 = _seed_watch_config(11, {})
-    next(p for p in cfg2["products"] if p["id"] == MB)["triggers"][
-        "buy_below_dkk"] = 920
-    scanner._migrate_config(cfg2)
-    assert _target(cfg2, MB) == 920
 
 
 # ---------------------------------------------------------------------------
