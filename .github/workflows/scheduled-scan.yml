@@ -1,8 +1,10 @@
 # Scheduled headless price scan -> shared DB (+ Discord ping on new BUYs).
 #
-# Politeness: 4 runs/day x ~30 sources at max 1 request/second/domain is well
+# Politeness: ~8 runs/day x ~55 sources at max 1 request/second/domain is well
 # inside the app's own policy (robots.txt respected, identifying User-Agent,
-# 1h response cache). Do not increase the frequency without rethinking that.
+# 1h response cache — so back-to-back runs are mostly cache hits). The extra
+# slots are redundancy against GitHub's best-effort scheduler dropping runs,
+# not more load. Do not increase the frequency further without rethinking that.
 #
 # Requires two repository Actions secrets (Settings -> Secrets and variables
 # -> Actions): DATABASE_URL (the shared Supabase Postgres, same value as the
@@ -11,7 +13,8 @@ name: Scheduled scan
 
 on:
   schedule:
-    - cron: "17 5,11,17,23 * * *"   # 4x/day, off-peak minute
+    - cron: "17 */3 * * *"          # every 3h at :17 (8x/day) — redundant vs
+                                     # GitHub dropping best-effort scheduled runs
   workflow_dispatch: {}             # manual runs from the Actions tab
 
 permissions:

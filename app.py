@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.6.0"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.7.0"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 
@@ -135,6 +135,13 @@ st.markdown(
 
 if "_flash" in st.session_state:
     st.success(st.session_state.pop("_flash"))
+
+# Staleness fallback: if the scheduled scan hasn't run in a while, nudge a human
+# to refresh (data stays current even when GitHub's cron misses a slot).
+_stale_h = scanner.hours_since_last_scan(conn)
+if _stale_h is not None and _stale_h >= settings.get("stale_hours", 8):
+    st.warning(f"⚠ Prices are **{_stale_h:.0f} h** old — a scheduled scan may "
+               "have been missed. Press **🔍 SCAN** on the Scan tab to refresh.")
 
 tab_scan, tab_collection, tab_config = st.tabs(
     ["📊 Scan", "🎴 Collection", "⚙️ Config"])
@@ -273,13 +280,26 @@ with tab_scan:
     if scan_succeeded:
         current_buys = [{"id": p["id"], "name": p["name"],
                          "reason": verdicts[p["id"]].reason,
-                         "url": verdicts[p["id"]].url}
+                         "url": verdicts[p["id"]].url or verdicts[p["id"]].cheapest_url,
+                         "price": verdicts[p["id"]].cheapest_dkk,
+                         "shop": verdicts[p["id"]].cheapest_shop,
+                         "trigger": p.get("triggers", {}).get("buy_below_dkk")}
                         for p in cfg["products"]
                         if verdicts[p["id"]].code == "BUY"]
+        current_items = [{"id": p["id"], "name": p["name"],
+                          "price": verdicts[p["id"]].cheapest_dkk,
+                          "shop": verdicts[p["id"]].cheapest_shop,
+                          "url": verdicts[p["id"]].cheapest_url}
+                         for p in cfg["products"]
+                         if verdicts[p["id"]].cheapest_dkk is not None]
         webhook = _secret("DISCORD_WEBHOOK_URL")
         new_ids = scanner.notify_new_buys(conn, webhook, current_buys)
-        if new_ids and webhook:
-            st.toast(f"Discord: pinged {len(new_ids)} new BUY(s)")
+        drops = scanner.notify_price_drops(
+            conn, webhook, current_items, settings.get("price_drop_pct", 10))
+        if webhook and (new_ids or drops):
+            parts = ([f"{len(new_ids)} new BUY(s)"] if new_ids else []) + \
+                    ([f"{len(drops)} price drop(s)"] if drops else [])
+            st.toast("Discord: pinged " + ", ".join(parts))
 
     st.dataframe(
         rows, use_container_width=True, hide_index=True,
@@ -708,6 +728,26 @@ with tab_collection:
 # ---------------------------------------------------------------------------
 
 with tab_config:
+    # -- Source health ------------------------------------------------------
+    st.subheader("Source health")
+    st.caption("Every configured source and its latest scan — worst first, so "
+               "a broken, stale, or drifting shop is visible at a glance.")
+    _health = scanner.source_health(conn, cfg)
+    _rank_emoji = {0: "🔴", 1: "🟠", 2: "🟡", 3: "🟢"}
+    _hrows = [{
+        "": _rank_emoji.get(r["rank"], "⚪"),
+        "Product": r["product"], "Shop": r["shop"], "Method": r["method"],
+        "Status": r["status"],
+        "Landed": scanner.fmt_dkk(r["landed"], 0) if r["landed"] is not None else "–",
+        "Age": (f"{r['age_h']:.0f} h" if r["age_h"] is not None else "–"),
+        "Note": r["flag"] or r["error"] or "",
+    } for r in _health]
+    _bad = sum(1 for r in _health if r["rank"] <= 1)
+    if _bad:
+        st.warning(f"{_bad} source(s) need attention (errors or drift). "
+                   "See the red/orange rows below.")
+    st.dataframe(_hrows, use_container_width=True, hide_index=True)
+
     st.subheader("Triggers")
     st.caption("Edit and press **Save triggers**. Empty = no trigger. "
                f"EUR/DKK is hardcoded at {scanner.EUR_DKK} (pegged).")

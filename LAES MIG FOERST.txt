@@ -33,6 +33,16 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.7 (paalidelig automatik)
+---------------------------------
+- Scanningen koerer nu oftere (redundans, hvis GitHub springer en over),
+  og appen viser en advarsel hvis priserne er blevet gamle - tryk SCAN.
+- Discord-beskeder viser nu pris + butik + graense, og der kommer ogsaa
+  besked ved store prisfald (ikke kun KOEB-signaler).
+- Ny "Source health"-tabel under Config: se med det samme hvis en butik
+  er i stykker, foraeldet eller giver mistaenkelige priser.
+
+
 NYT I v0.6 (Faraos + Spider-Man)
 --------------------------------
 - Faraos (faraos.dk) scannes nu ogsaa - den sidste butik fra listen.

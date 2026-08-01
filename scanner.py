@@ -63,6 +63,13 @@ DEFAULT_SETTINGS = {
     # E.g. br.dk gives 1 year of returns on unopened products, so at the same
     # price it is strictly the better venue. Never beats a lower price.
     "preferred_shops": {},
+    # Data is considered stale after this many hours since the last completed
+    # scan — the app then shows a "press SCAN" banner (a human fallback for a
+    # missed scheduled run).
+    "stale_hours": 8,
+    # A product's cheapest landed price falling by at least this % since the
+    # previous scan fires a Discord price-drop alert (even if it is not a BUY).
+    "price_drop_pct": 10,
 }
 
 
@@ -521,15 +528,28 @@ def parse_shopify_products_json(body: str, query_words: list[str],
         if handle and p.get("handle") == handle:
             best = p
             break
-        if not all(w in title for w in query_words):
+        # WHOLE-WORD matching (not substring): so an exclude of "pack" can't be
+        # dodged by "backpack", and "box" doesn't match "boxset".
+        title_words = re.findall(r"\w+", title)
+        tset = set(title_words)
+        if not all(w in tset for w in query_words):
             continue
-        if any(w in title for w in exclude_words):
+        if any(w in tset for w in exclude_words):
             continue
-        score = sum(len(w) for w in query_words) / max(len(title), 1)
+        # COVERAGE score: query words as a fraction of the title's words. The
+        # tightest match (fewest extra words) wins — replacing the old
+        # 1/len(title) which just picked the shortest matching title — and a
+        # query buried in a long, mostly-unrelated title scores too low to win.
+        score = len(query_words) / max(len(title_words), 1)
         if score > best_score:
             best, best_score = p, score
     if best is None:
         return ParsedPrice(error=f"no product matching {query_words!r}")
+    if handle is None and best_score < 0.2:
+        return ParsedPrice(
+            title=best.get("title", ""),
+            error=(f"weak match for {query_words!r} "
+                   f"(coverage {best_score:.0%}) — refusing"))
 
     variants = best.get("variants") or []
     avail = [float(v["price"]) for v in variants if v.get("available")]
@@ -2113,21 +2133,42 @@ def newly_buy_ids(current, previous) -> list:
     return sorted(set(current) - set(previous))
 
 
-def build_discord_payload(buys: list) -> dict:
-    """Discord webhook JSON for newly-flipped BUY products.
+def build_discord_payload(buys: list, drops: Optional[list] = None) -> dict:
+    """Discord webhook JSON for newly-flipped BUYs and (optionally) price drops.
 
-    `buys`: list of {"name", "reason"(opt), "url"(opt)}. Pure — no network —
-    so it is trivially unit-testable. Mirrors the app's 'Act now — BUY' text.
+    `buys`:  list of {"name", "price"(opt), "shop"(opt), "trigger"(opt),
+                      "reason"(opt), "url"(opt)}.
+    `drops`: list of {"name", "price", "prev", "pct", "shop"(opt), "url"(opt)}.
+    Pure — no network — so it is trivially unit-testable.
     """
-    if not buys:
-        return {"content": ""}
-    lines = ["\U0001F7E2 **Kort og Godt — new BUY signal(s)**"]
-    for b in buys:
-        reason = b.get("reason") or ""
-        line = f"• **{b['name']}**" + (f" — {reason}" if reason else "")
-        if b.get("url"):
-            line += f"  <{b['url']}>"
-        lines.append(line)
+    lines: list[str] = []
+    if buys:
+        lines.append("\U0001F7E2 **Kort og Godt — new BUY signal(s)**")
+        for b in buys:
+            line = f"• **{b['name']}**"
+            if b.get("price") is not None:
+                line += f" — {fmt_dkk(b['price'], 0)}"
+                if b.get("shop"):
+                    line += f" @ {b['shop']}"
+                if b.get("trigger") is not None:
+                    line += f" (≤ {fmt_dkk(b['trigger'], 0)})"
+            elif b.get("reason"):
+                line += f" — {b['reason']}"
+            if b.get("url"):
+                line += f"  <{b['url']}>"
+            lines.append(line)
+    if drops:
+        if lines:
+            lines.append("")
+        lines.append("\U0001F4C9 **Price drops**")
+        for d in drops:
+            line = (f"• **{d['name']}** — {fmt_dkk(d['price'], 0)} "
+                    f"({d.get('pct', 0):+.0f}% vs {fmt_dkk(d.get('prev'), 0)})")
+            if d.get("shop"):
+                line += f" @ {d['shop']}"
+            if d.get("url"):
+                line += f"  <{d['url']}>"
+            lines.append(line)
     return {"content": "\n".join(lines)}
 
 
@@ -2163,6 +2204,135 @@ def notify_new_buys(conn: Database, webhook_url: Optional[str],
     return new_ids
 
 
+def get_last_cheapest(conn: Database) -> dict:
+    """Map product_id -> cheapest landed price at the previous scan."""
+    row = conn.execute(
+        "SELECT value FROM app_config WHERE key = 'last_cheapest'").fetchone()
+    if not row or not row["value"]:
+        return {}
+    try:
+        d = json.loads(row["value"])
+        return d if isinstance(d, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def put_last_cheapest(conn: Database, mapping: dict) -> None:
+    _put_kv(conn, "last_cheapest", mapping)
+
+
+def price_drops(current: dict, previous: dict, pct_threshold: float) -> list:
+    """Pure diff: product ids whose cheapest landed fell by ≥ pct_threshold %
+    vs the previous scan. current/previous are {id: price}. No DB/network."""
+    out = []
+    for pid, price in current.items():
+        prev = previous.get(pid)
+        if not prev or prev <= 0 or not price or price <= 0:
+            continue
+        pct = (price - prev) / prev * 100.0
+        if pct <= -abs(pct_threshold):
+            out.append({"id": pid, "price": price, "prev": prev, "pct": pct})
+    return out
+
+
+def notify_price_drops(conn: Database, webhook_url: Optional[str],
+                       current_items: list, pct_threshold: float) -> list:
+    """Diff cheapest landed vs the previous scan, ping big drops, persist.
+
+    `current_items`: list of {"id", "name", "price"(cheapest landed),
+    "shop"(opt), "url"(opt)}. Twin of notify_new_buys — always persists the new
+    cheapest map so enabling Discord later doesn't replay old drops.
+    """
+    current_map = {c["id"]: c["price"] for c in current_items
+                   if c.get("price") is not None}
+    drops = price_drops(current_map, get_last_cheapest(conn), pct_threshold)
+    by_id = {c["id"]: c for c in current_items}
+    enriched = [{**d, "name": by_id.get(d["id"], {}).get("name", d["id"]),
+                 "shop": by_id.get(d["id"], {}).get("shop"),
+                 "url": by_id.get(d["id"], {}).get("url")} for d in drops]
+    if webhook_url and enriched:
+        post_discord(webhook_url, build_discord_payload([], enriched))
+    put_last_cheapest(conn, current_map)
+    return enriched
+
+
+def source_health(conn: Database, cfg: dict) -> list:
+    """One row per configured (product, shop, method) source with its latest
+    observation — for the Config-tab health dashboard. Each row carries a
+    ``rank`` (lower = worse, for worst-first sorting) and a drift ``flag`` set
+    when the latest good landed price swung wildly (> 2× / < 0.5×) vs the
+    previous good one (a plausible-but-suspicious move a layout change can cause).
+    """
+    settings = cfg.get("settings", {})
+    stale_h = settings.get("stale_hours", 8)
+    now = datetime.now()
+    rows = []
+    for p in cfg.get("products", []):
+        sources = p.get("sources", [])
+        latest = {(r["shop"], r["method"]): r
+                  for r in latest_observations(conn, p["id"], sources)}
+        for s in sources:
+            if s.get("method") == "cardmarket_manual":
+                continue
+            obs = latest.get((s.get("shop"), s.get("method")))
+            status, price, age_h, err, flag = "no data", None, None, "", ""
+            if obs is None:
+                err = "never scanned"
+            else:
+                status = obs["status"]
+                price = obs["landed_dkk"]
+                err = obs["error"] or ""
+                try:
+                    age_h = (now - datetime.fromisoformat(
+                        obs["observed_at"])).total_seconds() / 3600.0
+                except (TypeError, ValueError):
+                    age_h = None
+                if status == "ok" and price:
+                    prev = conn.execute(
+                        """SELECT landed_dkk FROM observations
+                           WHERE product_id=:pid AND shop=:shop AND method=:m
+                             AND status='ok' AND landed_dkk > 0
+                           ORDER BY id DESC LIMIT 2""",
+                        {"pid": p["id"], "shop": s["shop"],
+                         "m": s["method"]}).fetchall()
+                    if len(prev) >= 2:
+                        cur, old = prev[0]["landed_dkk"], prev[1]["landed_dkk"]
+                        if old and (cur > old * 2 or cur < old * 0.5):
+                            flag = "⚠ possible mis-parse/drift"
+            if status not in ("ok", "skipped"):
+                rank = 0                                    # error / no data
+            elif flag:
+                rank = 1
+            elif status == "skipped":
+                rank = 2
+            elif age_h is not None and age_h > stale_h:
+                rank = 2                                    # stale
+            else:
+                rank = 3                                    # ok + fresh
+            rows.append({
+                "product": p["name"], "shop": s.get("shop"),
+                "method": s.get("method"), "status": status,
+                "landed": price, "age_h": age_h, "error": err,
+                "flag": flag, "rank": rank,
+            })
+    rows.sort(key=lambda r: (r["rank"], r["product"]))
+    return rows
+
+
+def hours_since_last_scan(conn: Database) -> Optional[float]:
+    """Hours since the last COMPLETED scan, or None if none has finished yet."""
+    row = conn.execute(
+        "SELECT finished_at FROM scans WHERE finished_at IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    if not row or not row["finished_at"]:
+        return None
+    try:
+        last = datetime.fromisoformat(row["finished_at"])
+    except (TypeError, ValueError):
+        return None
+    return (datetime.now() - last).total_seconds() / 3600.0
+
+
 def run_headless(conn: Database, webhook: Optional[str] = None,
                  progress=None, non_dk_vantage: bool = False) -> dict:
     """One unattended scan cycle — the scheduled (GitHub Actions) entry point.
@@ -2186,9 +2356,24 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
     verdicts = {p["id"]: product_verdict(conn, p, cfg["settings"])
                 for p in cfg["products"]}
     buys = [{"id": p["id"], "name": p["name"],
-             "reason": verdicts[p["id"]].reason, "url": verdicts[p["id"]].url}
+             "reason": verdicts[p["id"]].reason,
+             "url": verdicts[p["id"]].url or verdicts[p["id"]].cheapest_url,
+             "price": verdicts[p["id"]].cheapest_dkk,
+             "shop": verdicts[p["id"]].cheapest_shop,
+             "trigger": p.get("triggers", {}).get("buy_below_dkk")}
             for p in cfg["products"] if verdicts[p["id"]].code == "BUY"]
+    current_items = [
+        {"id": p["id"], "name": p["name"],
+         "price": verdicts[p["id"]].cheapest_dkk,
+         "shop": verdicts[p["id"]].cheapest_shop,
+         "url": verdicts[p["id"]].cheapest_url}
+        for p in cfg["products"] if verdicts[p["id"]].cheapest_dkk is not None]
+    # Both diffs are gated on the webhook, same rule as notify_new_buys: without
+    # somewhere to send them, leave the state for the app-side scan to diff.
     new_ids = notify_new_buys(conn, webhook, buys) if webhook else None
+    drops = (notify_price_drops(conn, webhook, current_items,
+                                cfg["settings"].get("price_drop_pct", 10))
+             if webhook else None)
     return {
         "scan_id": scan_id,
         "n_sources": len(observations),
@@ -2199,4 +2384,5 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
                            for c in VERDICT_ORDER},
         "buys": buys,
         "new_buy_ids": new_ids,        # None = diff skipped (no webhook)
+        "price_drops": drops,          # None = diff skipped (no webhook)
     }

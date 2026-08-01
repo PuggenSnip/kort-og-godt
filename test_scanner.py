@@ -1266,6 +1266,85 @@ def test_parse_jsonld_product():
     assert "Pitch Black Elite Trainer Box" in p.title
 
 
+# ---------------------------------------------------------------------------
+# v0.7 — dependable automation: staleness, price drops, source health, matching
+# ---------------------------------------------------------------------------
+
+def test_hours_since_last_scan(conn):
+    assert scanner.hours_since_last_scan(conn) is None
+    old = (datetime.now() - timedelta(hours=10)).isoformat(timespec="seconds")
+    sid = conn.insert_scan(old)
+    conn.execute("UPDATE scans SET finished_at = :f WHERE id = :i",
+                 {"f": old, "i": sid})
+    h = scanner.hours_since_last_scan(conn)
+    assert h is not None and 9.5 < h < 10.5
+
+
+def test_build_discord_payload_rich_and_drops():
+    p = scanner.build_discord_payload(
+        [{"name": "Box A", "price": 599, "shop": "symbizon.dk",
+          "trigger": 599, "url": "http://x"}])
+    c = p["content"]
+    assert all(s in c for s in ("Box A", "599", "symbizon.dk", "≤", "http://x"))
+    d = scanner.build_discord_payload([], [
+        {"name": "Box B", "price": 900, "prev": 1100, "pct": -18.2,
+         "shop": "kelz0r.dk"}])["content"]
+    assert "Price drops" in d and "Box B" in d and "-18%" in d
+    assert scanner.build_discord_payload([], []) == {"content": ""}
+
+
+def test_price_drops_pure():
+    cur = {"a": 900, "b": 1000, "c": 500}
+    prev = {"a": 1100, "b": 1010, "c": 400}
+    drops = scanner.price_drops(cur, prev, 10)
+    assert {d["id"] for d in drops} == {"a"}     # a −18%; b −1% (<10); c rose
+    assert scanner.price_drops({"x": 100}, {}, 10) == []       # no prev → skip
+
+
+def test_notify_price_drops_persists_and_dedupes(conn):
+    scanner.put_last_cheapest(conn, {"p1": 1000})
+    items = [{"id": "p1", "name": "One", "price": 800, "shop": "s", "url": "u"}]
+    d = scanner.notify_price_drops(conn, "", items, 10)   # empty webhook, no post
+    assert len(d) == 1 and d[0]["name"] == "One" and d[0]["shop"] == "s"
+    assert scanner.get_last_cheapest(conn) == {"p1": 800}     # persisted
+    assert scanner.notify_price_drops(conn, "", items, 10) == []   # no re-fire
+
+
+def test_source_health_and_drift_flag(conn):
+    put(conn, shop="shopA", method="epicpanda", price=1000, days_ago=1)
+    put(conn, shop="shopA", method="epicpanda", price=3300)   # >2× jump vs prev
+    cfg = {"settings": SETTINGS, "products": [make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        {"shop": "shopZ", "method": "epicpanda", "url": "http://z"},
+    ])]}
+    rows = scanner.source_health(conn, cfg)
+    by_shop = {r["shop"]: r for r in rows}
+    assert by_shop["shopA"]["status"] == "ok" and "drift" in by_shop["shopA"]["flag"]
+    assert by_shop["shopZ"]["status"] == "no data"      # never scanned
+    assert rows[0]["rank"] <= rows[-1]["rank"]          # worst-first
+
+
+def test_shopify_match_wholeword_coverage_and_floor():
+    body = json.dumps({"products": [
+        {"title": "Prismatic Evolutions Elite Trainer Box",
+         "variants": [{"price": "1499.00", "available": True}]},
+        {"title": "Prismatic Evolutions Elite Trainer Box Premium Sealed "
+                  "English Import Edition Deluxe Collectors",
+         "variants": [{"price": "1999.00", "available": True}]},
+        {"title": "Prismatic Evolutions Booster Pack",
+         "variants": [{"price": "60.00", "available": True}]},
+    ]})
+    p = scanner.parse_shopify_products_json(
+        body, ["prismatic", "evolutions", "elite", "trainer"], ["pack"])
+    assert p.error is None and p.price == 1499.0   # tightest box, not verbose/pack
+    weak = json.dumps({"products": [{
+        "title": "Giant Mega Deluxe Ultimate Collectors Prismatic Storage "
+                 "Album Binder Box Accessory",
+        "variants": [{"price": "99.00", "available": True}]}]})
+    pw = scanner.parse_shopify_products_json(weak, ["prismatic"], [])
+    assert pw.error and "weak match" in pw.error    # 1 word in 12 → refused
+
+
 def test_parse_faraos_live():
     p = scanner.parse_faraos(
         load("faraos_product.html"), "spider-man collector".split(),

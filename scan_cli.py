@@ -52,6 +52,10 @@ def main() -> int:
               + ", ".join(summary["new_buy_ids"]))
     else:
         print("Discord: no newly-flipped BUYs")
+    drops = summary.get("price_drops")
+    if drops:
+        print(f"Discord: pinged {len(drops)} price drop(s): "
+              + ", ".join(f"{d['id']} ({d['pct']:+.0f}%)" for d in drops))
     return 0
 
 

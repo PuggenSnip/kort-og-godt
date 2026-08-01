@@ -49,6 +49,26 @@ secrets; leave them unset for local single-user use. Optionally set
 `DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
 after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
+## What's new in v0.7 — dependable automation
+
+Now that coverage is broad (8 shops, 25 products), v0.7 makes the automation
+*trustworthy*:
+- **Harder-to-miss scheduled scans** — the cron widened to ~8 off-peak slots/day
+  (redundancy against GitHub dropping scheduled runs; a public repo has unlimited
+  Actions minutes and the 1 h cache makes extra runs near-free). Plus an in-app
+  "⚠ prices are N h old — press SCAN" banner, so a human visit refreshes even if
+  the cron fully stalls.
+- **Richer Discord alerts** — a BUY ping now shows the price, shop and the
+  trigger it beat ("🟢 **…** — 599 kr @ symbizon.dk (≤ 599)"), and a new **📉
+  price-drop** alert fires when a product's cheapest landed falls ≥ 10 % since the
+  last scan — catching good deals that don't cross the buy line.
+- **Source-health dashboard** — a Config-tab table of every source's latest
+  status / price / age / error, worst-first, so a broken, stale, or *drifting*
+  shop (a > 2× price swing) is visible at a glance.
+- **Tighter matching** — the Shopify matcher now uses whole-word matching and
+  a coverage score (tightest match wins, a too-loose match is refused), instead
+  of just picking the shortest matching title.
+
 ## What's new in v0.6 — Faraos + Spider-Man
 
 - **Faraos (faraos.dk) is now scrapable** — the last shop from the research
