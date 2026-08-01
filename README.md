@@ -49,6 +49,19 @@ secrets; leave them unset for local single-user use. Optionally set
 `DISCORD_WEBHOOK_URL` to get a Discord ping when a product newly flips to BUY
 after a scan. Full step-by-step in **[DEPLOY.md](DEPLOY.md)**.
 
+## What's new in v0.6 — Faraos + Spider-Man
+
+- **Faraos (faraos.dk) is now scrapable** — the last shop from the research
+  list. It's an Angular app with no JSON-LD, so it needed a bespoke parser:
+  the main price is a clean `data-price` attribute on the single
+  `div[data-view="product"]`, read directly (no wrestling the 739 KB Angular
+  state blob). **Marvel's Spider-Man Collector Box** (3.979 kr) is now tracked.
+- **Soft-404 guard**: Faraos serves HTTP 200 for dead product slugs but
+  renders the parent *category*. The parser requires the page's `og:url` to
+  match the requested URL, so a removed product reports an honest not-found
+  instead of a neighbouring product's price. Verified live against a real
+  dead slug.
+
 ## What's new in v0.5 — the big watchlist
 
 - **14 new tracked products** (10 → 24), every source validated live through

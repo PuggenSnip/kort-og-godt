@@ -33,6 +33,14 @@ Du skal aldrig geninstallere eller opdatere manuelt – bare start det,
 som du plejer, så er du altid på den nyeste udgave.
 
 
+NYT I v0.6 (Faraos + Spider-Man)
+--------------------------------
+- Faraos (faraos.dk) scannes nu ogsaa - den sidste butik fra listen.
+  Marvel's Spider-Man Collector Box overvaages nu (3.979 kr).
+- Sikring mod "doede" Faraos-sider (de svarer 200 men viser en kategori);
+  appen naegter at gemme en forkert pris.
+
+
 NYT I v0.5 (den store overvaagningsliste)
 -----------------------------------------
 - 12 nye produkter overvaages nu (10 -> 22): bl.a. Chaos Rising,

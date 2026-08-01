@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 8,
+    "config_version": 9,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -19,7 +19,8 @@
       "spilforsyningen.dk": 45,
       "br.dk": 0,
       "rogerz.dk": 45,
-      "andcards.dk": 45
+      "andcards.dk": 45,
+      "faraos.dk": 49
     },
     "preferred_shops": {
       "br.dk": "1 års ombytning på uåbnede varer"
@@ -718,6 +719,25 @@
         "plausible_max_dkk": 5000
       },
       "notes": "MD#36: BUY ≤ ~1865 kr (€250) once Marvel-arc fatigue hits. Market ~€290. Four DK sources."
+    },
+    {
+      "id": "mtg-spider-man-collector-booster-box",
+      "name": "MTG Marvel's Spider-Man Collector Booster Box",
+      "sources": [
+        {
+          "shop": "faraos.dk",
+          "method": "faraos",
+          "url": "https://www.faraos.dk/games/kortspil/magicthegathering/marvelsspider-man/displays/marvels-spider-man-collector-display-12-magic--the-gathering",
+          "query": "spider-man collector",
+          "ref_price_2026_08_01": 3979
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 2240,
+        "plausible_min_dkk": 1500,
+        "plausible_max_dkk": 6000
+      },
+      "notes": "MD#37: INVEST — post-hype dip <€300 (~2240 kr). Faraos 3.979 kr now; only DK source found (Faraos Angular SPA, parsed via data-view=product data-price with an og:url soft-404 guard)."
     }
   ]
 }

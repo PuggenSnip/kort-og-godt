@@ -127,7 +127,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 8    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 9    # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
 
 
@@ -852,6 +852,61 @@ def parse_jsonld_product(body: str, query_words: Optional[list] = None,
     return ParsedPrice(title=title, price=price, in_stock=in_stock)
 
 
+def parse_faraos(body: str, query_words: Optional[list] = None,
+                 requested_url: Optional[str] = None) -> ParsedPrice:
+    """Parse a faraos.dk product page (Angular SSR — no JSON-LD).
+
+    The main product price is a clean attribute on the single
+    ``<div data-view="product" data-price="3979.00">`` element, so we read that
+    rather than the 739 KB escaped Angular state blob.
+
+    SOFT-404 GUARD: a dead/removed slug still returns HTTP 200 but renders the
+    parent CATEGORY, with ``og:url`` pointing at that category rather than the
+    requested product. When ``requested_url`` is given we require the page's
+    ``og:url`` path to match it — otherwise it's a category fallback, reported
+    as an honest not-found instead of a wrong (neighbouring) price.
+    """
+    tree = HTMLParser(body)
+
+    def _meta(prop: str) -> Optional[str]:
+        m = re.search(rf'<meta property="{prop}" content="([^"]*)"', body)
+        return m.group(1) if m else None
+
+    if requested_url:
+        og_url = _meta("og:url")
+        if og_url:
+            want = urllib.parse.urlsplit(requested_url).path.rstrip("/")
+            got = urllib.parse.urlsplit(og_url).path.rstrip("/")
+            if want != got:
+                return ParsedPrice(error=(
+                    f"Faraos page resolved to {got!r} not {want!r} — dead "
+                    "product (soft-404 to category), refusing to record"))
+
+    node = tree.css_first('div[data-view="product"][data-price]')
+    if node is None:
+        return ParsedPrice(error="no Faraos product price block on page")
+    title = _meta("og:title") or ""
+    if query_words and title:
+        low = title.lower()
+        if not all(w.lower() in low for w in query_words):
+            return ParsedPrice(title=title, error=(
+                f"Faraos product {title!r} does not match {query_words} "
+                "— wrong page?"))
+    try:
+        price = float(node.attributes.get("data-price"))
+    except (TypeError, ValueError):
+        return ParsedPrice(title=title, error="no numeric Faraos data-price")
+
+    low_body = body.lower()
+    if "udsolgt" in low_body:
+        in_stock = False
+    elif "læg i kurv" in low_body or "forudbestil" in low_body:
+        in_stock = True                 # buyable (in stock or pre-order)
+    else:
+        in_stock = None
+    return ParsedPrice(title=title, price=price, in_stock=in_stock)
+
+
 def parse_riporflip(body: str, set_name: str) -> ParsedPrice:
     """Extract a Rip-EV percentage for a set from riporfliptcg.com.
 
@@ -1024,6 +1079,12 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
             parsed = (parse_jsonld_product(
                 fetch.body, source.get("query", "").split() or None,
                 expected_currency=obs.currency)
+                if fetch.ok else None)
+        elif method == "faraos":
+            fetch = fetcher.get(url)
+            parsed = (parse_faraos(
+                fetch.body, source.get("query", "").split() or None,
+                requested_url=url)
                 if fetch.ok else None)
         elif method == "pricecharting":
             fetch = fetcher.get(url)

@@ -379,6 +379,9 @@ def test_live_fixture_smoke(path):
     if "br-dk" in name or "andcards" in name:      # JSON-LD product pages
         p = scanner.parse_jsonld_product(body)
         assert p.error is None and p.price > 0
+    elif "faraos" in name:
+        p = scanner.parse_faraos(body)
+        assert p.error is None and p.price > 0
     elif "kelz0r" in name and "-p-" in name:
         p = scanner.parse_kelz0r_product(body)
         assert p.error is None and p.price > 0
@@ -1261,6 +1264,30 @@ def test_parse_jsonld_product():
     assert p.price == 599
     assert p.in_stock is True
     assert "Pitch Black Elite Trainer Box" in p.title
+
+
+def test_parse_faraos_live():
+    p = scanner.parse_faraos(
+        load("faraos_product.html"), "spider-man collector".split(),
+        requested_url="https://www.faraos.dk/games/x/test-product")
+    assert p.error is None
+    assert p.price == pytest.approx(3979.0)     # data-price, not the 1279 cross-sell
+    assert p.in_stock is True
+    assert "Spider-Man Collector" in p.title
+
+
+def test_parse_faraos_soft404_and_guards():
+    req = "https://www.faraos.dk/games/x/test-product"
+    # Dead slug → category (og:url mismatch): refuse, never a stray price.
+    p = scanner.parse_faraos(load("faraos_soft404.html"), None, requested_url=req)
+    assert p.error and p.price is None and "soft-404" in p.error
+    # Wrong query on the live page → refuse.
+    p = scanner.parse_faraos(load("faraos_product.html"),
+                             "final fantasy".split(), requested_url=req)
+    assert p.error and "does not match" in p.error
+    # Smoke-test mode (no requested_url): still parses the real page.
+    p = scanner.parse_faraos(load("faraos_product.html"))
+    assert p.error is None and p.price == pytest.approx(3979.0)
 
 
 def test_jsonld_pricespecification_sale_over_list():
