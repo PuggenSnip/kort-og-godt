@@ -56,6 +56,10 @@ def main() -> int:
     if drops:
         print(f"Discord: pinged {len(drops)} price drop(s): "
               + ", ".join(f"{d['id']} ({d['pct']:+.0f}%)" for d in drops))
+    watch_live = summary.get("watch_live")
+    if watch_live:
+        print(f"Discord: pinged {len(watch_live)} watch(es) now live: "
+              + ", ".join(watch_live))
     return 0
 
 

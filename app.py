@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.7.0"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.8.0"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 
@@ -259,12 +259,13 @@ with tab_scan:
     counts = {}
     for v in verdicts.values():
         counts[v.code] = counts.get(v.code, 0) + 1
-    mc = st.columns(5)
+    mc = st.columns(6)
     mc[0].metric("🟢 BUY", counts.get("BUY", 0))
-    mc[1].metric("🟡 Falling", counts.get("WAIT_FALLING", 0))
-    mc[2].metric("🔴 AVOID", counts.get("AVOID", 0))
-    mc[3].metric("⚪ HOLD", counts.get("HOLD", 0))
-    mc[4].metric("⚫ Unverified", counts.get("UNVERIFIED", 0))
+    mc[1].metric("⏳ Watch", counts.get("WATCH", 0))
+    mc[2].metric("🟡 Falling", counts.get("WAIT_FALLING", 0))
+    mc[3].metric("🔴 AVOID", counts.get("AVOID", 0))
+    mc[4].metric("⚪ HOLD", counts.get("HOLD", 0))
+    mc[5].metric("⚫ Unverified", counts.get("UNVERIFIED", 0))
 
     buys = [(p["name"], verdicts[p["id"]]) for p in cfg["products"]
             if verdicts[p["id"]].code == "BUY"]
@@ -273,6 +274,18 @@ with tab_scan:
             f"- **{name}** — {v.reason}"
             + (f"  ·  [open shop]({v.url})" if v.url else "")
             for name, v in buys))
+
+    # Watches — parked/monitored preorders & grails. Shown separately from the
+    # act-now BUY box: no action needed, just tracking for the target moment.
+    watches = [(p["name"], verdicts[p["id"]]) for p in cfg["products"]
+               if verdicts[p["id"]].code == "WATCH"]
+    if watches:
+        st.info("**⏳ Watching (preorders / grails — alert fires when priced ≤ "
+                "target):**\n\n" + "\n".join(
+                    f"- **{name}** — {v.reason}"
+                    + (f"  ·  [open shop]({v.cheapest_url})"
+                       if v.cheapest_url else "")
+                    for name, v in watches))
 
     # Discord ping: after a successful scan, post the products that flipped INTO
     # BUY since the previous scan. No cron — it rides this SCAN. The webhook is a
@@ -292,13 +305,24 @@ with tab_scan:
                           "url": verdicts[p["id"]].cheapest_url}
                          for p in cfg["products"]
                          if verdicts[p["id"]].cheapest_dkk is not None]
+        watch_items = [{"id": p["id"], "name": p["name"],
+                        "price": verdicts[p["id"]].cheapest_dkk,
+                        "shop": verdicts[p["id"]].cheapest_shop,
+                        "url": verdicts[p["id"]].cheapest_url,
+                        "target": p.get("triggers", {}).get("buy_below_dkk")}
+                       for p in cfg["products"]
+                       if p.get("watch")
+                       and verdicts[p["id"]].cheapest_dkk is not None]
         webhook = _secret("DISCORD_WEBHOOK_URL")
         new_ids = scanner.notify_new_buys(conn, webhook, current_buys)
         drops = scanner.notify_price_drops(
             conn, webhook, current_items, settings.get("price_drop_pct", 10))
-        if webhook and (new_ids or drops):
+        watch_live = scanner.notify_watch_live(
+            conn, webhook, watch_items, exclude_ids=new_ids)
+        if webhook and (new_ids or drops or watch_live):
             parts = ([f"{len(new_ids)} new BUY(s)"] if new_ids else []) + \
-                    ([f"{len(drops)} price drop(s)"] if drops else [])
+                    ([f"{len(drops)} price drop(s)"] if drops else []) + \
+                    ([f"{len(watch_live)} watch(es) live"] if watch_live else [])
             st.toast("Discord: pinged " + ", ".join(parts))
 
     st.dataframe(
@@ -751,27 +775,40 @@ with tab_config:
     st.subheader("Triggers")
     st.caption("Edit and press **Save triggers**. Empty = no trigger. "
                f"EUR/DKK is hardcoded at {scanner.EUR_DKK} (pegged).")
+    st.caption("**Watch** = a parked item (unpriced preorder or a grail far "
+               "above target): it shows ⏳ WATCH instead of cluttering BUY/HOLD, "
+               "and pings when it prices ≤ its BUY target (or first goes live).")
     trig_rows = []
     for p in cfg["products"]:
         t = p.get("triggers", {})
         trig_rows.append({
             "id": p["id"],
             "Product": p["name"],
+            "Watch": bool(p.get("watch")),
             "BUY ≤ (DKK)": t.get("buy_below_dkk"),
             "AVOID ≥ (DKK)": t.get("avoid_above_dkk"),
             "CM BUY ≤ (€)": t.get("cardmarket_buy_below_eur"),
             "CM stable days": t.get("cardmarket_stable_days"),
             "Not before": t.get("not_before"),
         })
-    edited = st.data_editor(trig_rows, hide_index=True,
-                            use_container_width=True,
-                            disabled=["id", "Product"], key="trig_editor")
+    edited = st.data_editor(
+        trig_rows, hide_index=True, use_container_width=True,
+        disabled=["id", "Product"], key="trig_editor",
+        column_config={"Watch": st.column_config.CheckboxColumn(
+            "Watch", help="Parked/monitored item — shows ⏳ WATCH until it "
+                          "reaches its BUY target.")})
     if st.button("💾 Save triggers"):
         by_id = {r["id"]: r for r in edited}
         for p in cfg["products"]:
             r = by_id.get(p["id"])
             if not r:
                 continue
+            # Watch is a product-level flag, not a trigger. Store True only
+            # when set, so unmarked products stay clean (no "watch": false).
+            if r.get("Watch"):
+                p["watch"] = True
+            else:
+                p.pop("watch", None)
             t = p.setdefault("triggers", {})
             for key, col in [("buy_below_dkk", "BUY ≤ (DKK)"),
                              ("avoid_above_dkk", "AVOID ≥ (DKK)"),

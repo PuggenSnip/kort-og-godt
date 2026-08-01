@@ -134,8 +134,9 @@ def _put_kv(conn, key: str, obj: dict) -> None:
                  {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 9    # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 10   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
+                           # (v10: notify-watch launch items)
 
 
 def _migrate_config(cfg: dict) -> bool:
@@ -1419,10 +1420,11 @@ def cardmarket_stability(conn: Database, product_id: str,
 # Verdict engine
 # ---------------------------------------------------------------------------
 
-VERDICT_ORDER = ["BUY", "WAIT_FALLING", "AVOID", "HOLD", "UNVERIFIED"]
+VERDICT_ORDER = ["BUY", "WATCH", "WAIT_FALLING", "AVOID", "HOLD", "UNVERIFIED"]
 
 VERDICT_STYLE = {
     "BUY": ("🟢", "BUY"),
+    "WATCH": ("⏳", "WATCH"),
     "WAIT_FALLING": ("🟡", "WAIT — falling"),
     "AVOID": ("🔴", "AVOID"),
     "HOLD": ("⚪", "HOLD / WAIT"),
@@ -1488,8 +1490,17 @@ def product_verdict(conn: Database, product: dict,
     3. today < 7d avg and above trigger         -> WAIT_FALLING
     4. cheapest >= avoid_above                  -> AVOID
     5. otherwise                                -> HOLD with distance to trigger
+
+    A product marked ``"watch": true`` is a parked, monitored item (a listed-
+    but-usually-unpriced launch preorder, or a grail far above target). For it
+    the ONLY actionable verdict is BUY (rule 0 or rule 2 — target reached);
+    every other outcome — no price yet, priced above target, falling, would-be
+    AVOID — collapses to WATCH so watches stay out of the act-now view and a
+    preorder with no price yet never masquerades as UNVERIFIED. Failed sources
+    are still recorded in v.failures as context, never hidden.
     """
     triggers = product.get("triggers", {})
+    is_watch = bool(product.get("watch"))
     latest = latest_observations(conn, product["id"], product.get("sources", []))
     trend = compute_trend(conn, product["id"], settings)
     v = Verdict(code="HOLD", reason="", trend=trend)
@@ -1560,13 +1571,16 @@ def product_verdict(conn: Database, product: dict,
                          "scan (see failure list)")
         return v
 
-    # Rule 1 — data hygiene beats everything data-driven.
-    if failures:
+    # Rule 1 — data hygiene beats everything data-driven. Skipped for watches:
+    # a watch is speculative and wants the earliest possible target signal, so
+    # a flaky co-source must not withhold a BUY nor mask a preorder as broken —
+    # the failure list still carries the detail (see the WATCH-tail below).
+    if failures and not is_watch:
         v.code = "UNVERIFIED"
         v.reason = (f"{len(failures)} of {len(checkable)} checkable sources "
                     "failed — verdict withheld, see failure list")
         return v
-    if not ok_rows and cm_row is None:
+    if not ok_rows and cm_row is None and not is_watch:
         v.code = "UNVERIFIED"
         if skipped and not checkable:
             names = ", ".join(r["shop"] for r in skipped)
@@ -1608,6 +1622,24 @@ def product_verdict(conn: Database, product: dict,
                         f"{seen}) ≤ trigger €{cm_below:g}")
             v.shop, v.url = "cardmarket", cm_row["url"]
             return v
+
+    # WATCH-tail — a watch that isn't a BUY is parked, not HOLD/AVOID/UNVERIFIED.
+    # The reason carries the state: waiting for a price, distance above target,
+    # or a falling hint. Failed sources remain in v.failures for context.
+    if is_watch:
+        v.code = "WATCH"
+        if v.cheapest_dkk is None:
+            v.reason = "listed but no in-stock price yet — waiting for it to price"
+        elif buy_below:
+            over = v.cheapest_dkk - buy_below
+            v.reason = (f"{fmt_dkk(v.cheapest_dkk)} — {fmt_dkk(over, 0)} above "
+                        f"target {fmt_dkk(buy_below, 0)}")
+        else:
+            v.reason = f"listed at {fmt_dkk(v.cheapest_dkk)} (no target set)"
+        if (trend.avg7 is not None and trend.today is not None
+                and trend.today < trend.avg7):
+            v.reason += f"; falling {trend.pct_vs(trend.avg7):+.1f}% vs 7d avg"
+        return v
 
     # Rule 3 — falling price, still above trigger.
     if (trend.avg7 is not None and trend.today is not None
@@ -2133,12 +2165,17 @@ def newly_buy_ids(current, previous) -> list:
     return sorted(set(current) - set(previous))
 
 
-def build_discord_payload(buys: list, drops: Optional[list] = None) -> dict:
-    """Discord webhook JSON for newly-flipped BUYs and (optionally) price drops.
+def build_discord_payload(buys: list, drops: Optional[list] = None,
+                          watch_live: Optional[list] = None) -> dict:
+    """Discord webhook JSON for newly-flipped BUYs, price drops and watches
+    that just went live.
 
     `buys`:  list of {"name", "price"(opt), "shop"(opt), "trigger"(opt),
                       "reason"(opt), "url"(opt)}.
     `drops`: list of {"name", "price", "prev", "pct", "shop"(opt), "url"(opt)}.
+    `watch_live`: list of {"name", "price"(opt), "shop"(opt), "target"(opt),
+                      "url"(opt)} — a watched preorder that just got its first
+                      price (above target; ≤-target ones ride the BUY section).
     Pure — no network — so it is trivially unit-testable.
     """
     lines: list[str] = []
@@ -2168,6 +2205,21 @@ def build_discord_payload(buys: list, drops: Optional[list] = None) -> dict:
                 line += f" @ {d['shop']}"
             if d.get("url"):
                 line += f"  <{d['url']}>"
+            lines.append(line)
+    if watch_live:
+        if lines:
+            lines.append("")
+        lines.append("\U0001F195 **Watches now priced** (preorder went live)")
+        for w in watch_live:
+            line = f"• **{w['name']}**"
+            if w.get("price") is not None:
+                line += f" — {fmt_dkk(w['price'], 0)}"
+                if w.get("shop"):
+                    line += f" @ {w['shop']}"
+                if w.get("target") is not None:
+                    line += f" (target ≤ {fmt_dkk(w['target'], 0)})"
+            if w.get("url"):
+                line += f"  <{w['url']}>"
             lines.append(line)
     return {"content": "\n".join(lines)}
 
@@ -2256,6 +2308,50 @@ def notify_price_drops(conn: Database, webhook_url: Optional[str],
     return enriched
 
 
+def get_last_watch_priced(conn: Database) -> set:
+    """Watch product ids that had a verified in-stock price at the last scan."""
+    row = conn.execute(
+        "SELECT value FROM app_config WHERE key = 'last_watch_priced'").fetchone()
+    if not row or not row["value"]:
+        return set()
+    try:
+        return set(json.loads(row["value"]))
+    except (ValueError, TypeError):
+        return set()
+
+
+def put_last_watch_priced(conn: Database, ids) -> None:
+    _put_kv(conn, "last_watch_priced", sorted(set(ids)))
+
+
+def newly_priced_watch_ids(current, previous, exclude=()) -> list:
+    """Watch ids priced now but not at the previous scan, minus `exclude`
+    (the ids already reported as new BUYs, so a below-target debut isn't
+    double-pinged). Pure set diff — no DB/network."""
+    return sorted((set(current) - set(previous)) - set(exclude))
+
+
+def notify_watch_live(conn: Database, webhook_url: Optional[str],
+                      watch_items: list, exclude_ids=()) -> list:
+    """Ping watches that just got their first verified in-stock price.
+
+    `watch_items`: list of {"id", "name", "price"(opt), "shop"(opt),
+    "url"(opt), "target"(opt)} — the watches that ARE priced this scan. The
+    "went live" event is the transition from unpriced to priced; a debut at or
+    below target is already a new BUY (passed in `exclude_ids`) and rides that
+    section instead. Twin of notify_new_buys: always persists the current
+    priced set so enabling Discord later doesn't replay old debuts.
+    """
+    current_ids = [w["id"] for w in watch_items]
+    new_ids = newly_priced_watch_ids(current_ids, get_last_watch_priced(conn),
+                                     exclude_ids)
+    fresh = [w for w in watch_items if w["id"] in set(new_ids)]
+    if webhook_url and fresh:
+        post_discord(webhook_url, build_discord_payload([], None, fresh))
+    put_last_watch_priced(conn, current_ids)
+    return new_ids
+
+
 def source_health(conn: Database, cfg: dict) -> list:
     """One row per configured (product, shop, method) source with its latest
     observation — for the Config-tab health dashboard. Each row carries a
@@ -2269,6 +2365,7 @@ def source_health(conn: Database, cfg: dict) -> list:
     rows = []
     for p in cfg.get("products", []):
         sources = p.get("sources", [])
+        is_watch = bool(p.get("watch"))
         latest = {(r["shop"], r["method"]): r
                   for r in latest_observations(conn, p["id"], sources)}
         for s in sources:
@@ -2299,7 +2396,16 @@ def source_health(conn: Database, cfg: dict) -> list:
                         cur, old = prev[0]["landed_dkk"], prev[1]["landed_dkk"]
                         if old and (cur > old * 2 or cur < old * 0.5):
                             flag = "⚠ possible mis-parse/drift"
-            if status not in ("ok", "skipped"):
+            watch_awaiting = is_watch and status not in ("ok", "skipped")
+            if watch_awaiting:
+                # A watch with no price yet is the EXPECTED state, not a broken
+                # source — rank it neutral (not red) so the dashboard stays a
+                # signal, and label it clearly.
+                rank = 2
+                status = "awaiting price"
+                if not err:
+                    err = "watch — no price listed yet"
+            elif status not in ("ok", "skipped"):
                 rank = 0                                    # error / no data
             elif flag:
                 rank = 1
@@ -2313,7 +2419,7 @@ def source_health(conn: Database, cfg: dict) -> list:
                 "product": p["name"], "shop": s.get("shop"),
                 "method": s.get("method"), "status": status,
                 "landed": price, "age_h": age_h, "error": err,
-                "flag": flag, "rank": rank,
+                "flag": flag, "rank": rank, "watch": is_watch,
             })
     rows.sort(key=lambda r: (r["rank"], r["product"]))
     return rows
@@ -2368,12 +2474,25 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
          "shop": verdicts[p["id"]].cheapest_shop,
          "url": verdicts[p["id"]].cheapest_url}
         for p in cfg["products"] if verdicts[p["id"]].cheapest_dkk is not None]
-    # Both diffs are gated on the webhook, same rule as notify_new_buys: without
+    # Watches that ARE priced this scan (verified in-stock landed price). A
+    # debut here is the "preorder went live" event notify_watch_live pings.
+    watch_items = [
+        {"id": p["id"], "name": p["name"],
+         "price": verdicts[p["id"]].cheapest_dkk,
+         "shop": verdicts[p["id"]].cheapest_shop,
+         "url": verdicts[p["id"]].cheapest_url,
+         "target": p.get("triggers", {}).get("buy_below_dkk")}
+        for p in cfg["products"]
+        if p.get("watch") and verdicts[p["id"]].cheapest_dkk is not None]
+    # All diffs are gated on the webhook, same rule as notify_new_buys: without
     # somewhere to send them, leave the state for the app-side scan to diff.
     new_ids = notify_new_buys(conn, webhook, buys) if webhook else None
     drops = (notify_price_drops(conn, webhook, current_items,
                                 cfg["settings"].get("price_drop_pct", 10))
              if webhook else None)
+    watch_live = (notify_watch_live(conn, webhook, watch_items,
+                                    exclude_ids=new_ids or [])
+                  if webhook else None)
     return {
         "scan_id": scan_id,
         "n_sources": len(observations),
@@ -2385,4 +2504,5 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
         "buys": buys,
         "new_buy_ids": new_ids,        # None = diff skipped (no webhook)
         "price_drops": drops,          # None = diff skipped (no webhook)
+        "watch_live": watch_live,      # None = diff skipped (no webhook)
     }

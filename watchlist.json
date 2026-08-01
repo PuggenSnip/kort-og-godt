@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 9,
+    "config_version": 10,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -738,6 +738,80 @@
         "plausible_max_dkk": 6000
       },
       "notes": "MD#37: INVEST — post-hype dip <€300 (~2240 kr). Faraos 3.979 kr now; only DK source found (Faraos Angular SPA, parsed via data-view=product data-price with an og:url soft-404 guard)."
+    },
+    {
+      "id": "pkmn-30th-celebration-etb-en",
+      "name": "Pokémon 30th Celebration ETB EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-30th-celebration-elite-trainer-box",
+          "ref_price_2026_08_01": 799
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-30th-celebration-elite-trainer-box-nidorina-boks-medboosters-promokort-tilbehor-p-385654.html",
+          "query": "30th celebration elite trainer",
+          "ref_price_2026_08_01": 799.95
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 799,
+        "not_before": "2026-09-16",
+        "plausible_min_dkk": 300,
+        "plausible_max_dkk": 2000
+      },
+      "notes": "WATCH (launch 2026-09-16, first-ever global simultaneous Pokémon release). Notify-watch: both sources are preorder/out-of-stock now (Rogerz 799, Kelz0r Nidorina 799,95) — verdict stays ⏳ WATCH and pings when one goes in-stock ≤ target. Target 799 = DK retail; PROVISIONAL pending the owner's watchlist targets. Kelz0r's is the Nidorina art variant; Rogerz a generic ETB listing (30th Celebration ETBs ship in per-character variants at the same price tier). Both flag 'Risiko for allokering'. Validated live 2026-08-01."
+    },
+    {
+      "id": "pkmn-30th-celebration-bundle-en",
+      "name": "Pokémon 30th Celebration Booster Bundle EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-30th-celebration-booster-bundle",
+          "ref_price_2026_08_01": 499
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 499,
+        "not_before": "2026-10-02",
+        "plausible_min_dkk": 150,
+        "plausible_max_dkk": 1200
+      },
+      "notes": "WATCH (launch 2026-10-02). Rogerz preorder/out-of-stock at 499 — pings when in-stock ≤ target. Target 499 = DK retail; PROVISIONAL pending the owner's target. The 6-pack bundle, not a display. Validated live 2026-08-01."
+    },
+    {
+      "id": "pkmn-30th-celebration-upc-en",
+      "name": "Pokémon 30th Celebration Ultra-Premium Collection EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-30th-celebration-ultra-premium-collections-day-night",
+          "ref_price_2026_08_01": 2199
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-30th-celebration-ultrapremium-collection-night-umbreon-2026-boosters-p-385691.html",
+          "query": "30th celebration umbreon",
+          "ref_price_2026_08_01": 2279.95
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 2199,
+        "not_before": "2026-11-06",
+        "plausible_min_dkk": 1000,
+        "plausible_max_dkk": 5000
+      },
+      "notes": "WATCH (launch 2026-11-06). A single Ultra-Premium Collection box, sold per variant — Day (Espeon) / Night (Umbreon). Rogerz's listing exposes Day & Night as variants at 2199 kr each (NOT a pair); Kelz0r lists the Night/Umbreon box at ~2280. Both preorder/out-of-stock; cheapest single box wins. Target 2199 = DK retail per box; PROVISIONAL pending the owner's target. Both flag 'Risiko for allokering'. Validated live 2026-08-01."
     }
   ]
 }

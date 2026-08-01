@@ -1470,3 +1470,136 @@ def test_notify_new_buys_persists_and_diffs(conn):
     # Dropping out of BUY then back doesn't spuriously resurface others.
     assert scanner.notify_new_buys(conn, "", [{"id": "p1", "name": "One"}]) == []
     assert scanner.notify_new_buys(conn, "", buys2) == ["p2", "p3"]
+
+
+# ---------------------------------------------------------------------------
+# v0.8 — notify-watch: WATCH verdict + "went live" alerts
+# ---------------------------------------------------------------------------
+
+def _watch_product(**over) -> dict:
+    return make_product(watch=True, **over)
+
+
+def test_watch_unpriced_shows_watch_not_unverified(conn):
+    # A watch whose only source has no price yet (a listed-but-unpriced
+    # preorder) is WATCH, not UNVERIFIED — "no price yet" is the expected state.
+    put(conn, status="error", error="no price found in product page", price=None)
+    v = scanner.product_verdict(conn, _watch_product(), SETTINGS)
+    assert v.code == "WATCH"
+    assert "no in-stock price yet" in v.reason
+    # The SAME sources without the watch flag are UNVERIFIED (rule unchanged).
+    assert scanner.product_verdict(conn, make_product(), SETTINGS).code \
+        == "UNVERIFIED"
+
+
+def test_watch_no_observations_is_watch(conn):
+    # A freshly-added watch with zero observations is WATCH, not UNVERIFIED.
+    v = scanner.product_verdict(conn, _watch_product(), SETTINGS)
+    assert v.code == "WATCH"
+    assert "no in-stock price yet" in v.reason
+
+
+def test_watch_priced_above_target_shows_distance(conn):
+    put(conn, price=1600)
+    v = scanner.product_verdict(
+        conn, _watch_product(triggers={"buy_below_dkk": 1000}), SETTINGS)
+    assert v.code == "WATCH"
+    assert "above target" in v.reason
+    assert v.vs_trigger_dkk == pytest.approx(600)
+
+
+def test_watch_priced_below_target_becomes_buy(conn):
+    # The payoff: a watch that reaches its target flips to BUY (and so pings).
+    put(conn, price=950)
+    v = scanner.product_verdict(
+        conn, _watch_product(triggers={"buy_below_dkk": 1000}), SETTINGS)
+    assert v.code == "BUY"
+    assert v.cheapest_dkk == 950
+
+
+def test_watch_buys_despite_failing_cosource(conn):
+    # Data hygiene (rule 1 UNVERIFIED) is skipped for watches: a flaky co-source
+    # must not withhold the target signal. The failure is still surfaced.
+    put(conn, shop="shopA", method="epicpanda", price=950)
+    put(conn, shop="shopB", method="kelz0r_product", status="error",
+        error="timeout", price=None)
+    p = _watch_product(triggers={"buy_below_dkk": 1000}, sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        {"shop": "shopB", "method": "kelz0r_product", "url": "http://b"}])
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert any("shopB" in f for f in v.failures)
+
+
+def test_watch_avoid_and_falling_collapse_to_watch(conn):
+    # A watch never shows AVOID or WAIT_FALLING — both collapse to WATCH, with
+    # the falling move preserved in the reason as context.
+    for d in (1, 2, 3):
+        put(conn, price=2000, days_ago=d)
+    put(conn, price=1800)
+    p = _watch_product(triggers={"buy_below_dkk": 1000, "avoid_above_dkk": 1500})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "WATCH"
+    assert "falling" in v.reason
+
+
+def test_watch_manual_flag_still_buys(conn):
+    put(conn, status="error", error="no price", price=None)
+    p = _watch_product(triggers={"buy_below_dkk": 1000, "manual_buy_flag": "go"},
+                       flags={"go": True})
+    v = scanner.product_verdict(conn, p, SETTINGS)
+    assert v.code == "BUY"
+    assert "go" in v.reason
+
+
+def test_newly_priced_watch_ids_pure():
+    # New minus previous minus exclude (ids already pinged as new BUYs).
+    assert scanner.newly_priced_watch_ids(["a", "b", "c"], ["a"], ["b"]) == ["c"]
+    assert scanner.newly_priced_watch_ids(["a"], ["a"], []) == []
+    assert scanner.newly_priced_watch_ids(["x", "y"], [], []) == ["x", "y"]
+
+
+def test_notify_watch_live_persists_dedupes_excludes(conn):
+    items = [{"id": "w1", "name": "Preorder One", "price": 1200, "shop": "s",
+              "url": "u", "target": 1000}]
+    assert scanner.notify_watch_live(conn, "", items) == ["w1"]   # debut
+    assert scanner.get_last_watch_priced(conn) == {"w1"}          # persisted
+    assert scanner.notify_watch_live(conn, "", items) == []       # no re-fire
+    # A below-target debut is a new BUY (excluded) — not double-pinged here,
+    # but still tracked so it never re-fires as a watch-live later.
+    items2 = items + [{"id": "w2", "name": "Two", "price": 800, "target": 1000}]
+    assert scanner.notify_watch_live(conn, "", items2, exclude_ids=["w2"]) == []
+    assert scanner.get_last_watch_priced(conn) == {"w1", "w2"}
+
+
+def test_build_discord_payload_watch_live_section():
+    c = scanner.build_discord_payload([], None, [
+        {"name": "Delta Reign Box", "price": 1299, "shop": "kelz0r.dk",
+         "target": 1000, "url": "http://x"}])["content"]
+    assert "Watches now priced" in c
+    assert all(s in c for s in ("Delta Reign Box", "1.299", "kelz0r.dk",
+                                "1.000", "http://x"))
+    assert scanner.build_discord_payload([], None, []) == {"content": ""}
+
+
+def test_source_health_watch_awaiting_not_red(conn):
+    # A watch source with no price yet ranks neutral (not red rank-0) and is
+    # labelled "awaiting price", so the health dashboard stays a real signal.
+    put(conn, shop="shopA", method="epicpanda", status="error",
+        error="no price found", price=None)
+    cfg = {"settings": SETTINGS, "products": [_watch_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"}])]}
+    row = scanner.source_health(conn, cfg)[0]
+    assert row["status"] == "awaiting price"
+    assert row["rank"] == 2 and row["watch"] is True
+
+
+def test_run_headless_includes_watch_live_key(conn):
+    cfg = {"settings": dict(SETTINGS, record_fixtures=False,
+                            config_version=scanner.SEED_CONFIG_VERSION),
+           "products": [_watch_product(sources=[])]}
+    scanner.put_config(conn, cfg)
+    summary = scanner.run_headless(conn, webhook=None)
+    assert "watch_live" in summary
+    assert summary["watch_live"] is None            # diff skipped (no webhook)
+    assert summary["verdict_counts"].get("WATCH", 0) == 1
