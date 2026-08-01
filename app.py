@@ -16,7 +16,7 @@ import streamlit as st
 
 import scanner
 
-APP_VERSION = "0.8.2"    # semver 0.MINOR.PATCH — minor = feature wave,
+APP_VERSION = "0.9.0"    # semver 0.MINOR.PATCH — minor = feature wave,
                          # patch = fixes between waves. 1.0 is declared, not
                          # drifted into.
 
@@ -31,16 +31,79 @@ except Exception:       # noqa: BLE001 — branding must never block startup
 st.set_page_config(page_title="Kort og Godt", page_icon=_PAGE_ICON,
                    layout="wide")
 
-st.markdown(
-    """
-    <style>
-    div[data-testid="stButton"] > button[kind="primary"] {
-        font-size: 1.6rem; font-weight: 700; padding: 0.9rem 3rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+_CSS = """
+<style>
+/* ===== Kort og Godt — v0.9 visual system (black & gold trading-card) ===== */
+:root{
+  --kog-gold:#D6B05C; --kog-gold-bright:#EACE86; --kog-gold-dim:rgba(214,176,92,.26);
+}
+.block-container{ padding-top:2.1rem; max-width:1320px; }
+
+/* ----- Custom header ----- */
+.kog-header{
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  border-bottom:1px solid var(--kog-gold-dim);
+  padding-bottom:12px; margin:0 0 6px 0;
+}
+.kog-header .kog-logo{ font-size:2.0rem; line-height:1; }
+.kog-header h1.kog-title{
+  margin:0; padding:0; font-size:2.0rem; font-weight:800; letter-spacing:.4px;
+  background:linear-gradient(92deg,var(--kog-gold-bright),var(--kog-gold));
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+}
+.kog-header .kog-tagline{ color:#B7B0A2; font-size:.9rem; }
+.kog-header .kog-ver{
+  margin-left:auto; color:var(--kog-gold); font-weight:700; font-size:.76rem;
+  border:1px solid var(--kog-gold-dim); padding:2px 11px; border-radius:999px;
+  white-space:nowrap;
+}
+
+/* ----- Metric cards ----- */
+[data-testid="stMetric"]{
+  background:linear-gradient(180deg,rgba(214,176,92,.07),rgba(214,176,92,.015));
+  border:1px solid var(--kog-gold-dim); border-radius:14px; padding:12px 16px;
+}
+[data-testid="stMetricValue"]{ color:var(--kog-gold-bright); font-weight:800; }
+[data-testid="stMetricLabel"]{ opacity:.9; font-weight:600; }
+
+/* ----- Primary SCAN button: gold ----- */
+div[data-testid="stButton"] > button[kind="primary"]{
+  background:linear-gradient(180deg,#EACE86,#C79A3E); color:#1c1608; border:none;
+  font-size:1.45rem; font-weight:800; padding:.7rem 2.4rem; border-radius:12px;
+  box-shadow:0 6px 18px rgba(199,154,62,.28);
+}
+div[data-testid="stButton"] > button[kind="primary"]:hover{
+  filter:brightness(1.06); box-shadow:0 8px 22px rgba(199,154,62,.42);
+}
+
+/* ----- Tabs ----- */
+[data-baseweb="tab-list"]{ gap:6px; }
+button[data-baseweb="tab"]{ font-weight:600; }
+button[data-baseweb="tab"][aria-selected="true"]{ color:var(--kog-gold-bright); }
+[data-baseweb="tab-highlight"]{ background-color:var(--kog-gold)!important; }
+
+/* ----- Section headings (st.header/subheader): gold accent bar ----- */
+[data-testid="stHeadingWithActionElements"]{ position:relative; padding-left:13px; }
+[data-testid="stHeadingWithActionElements"]::before{
+  content:""; position:absolute; left:0; top:.2em; bottom:.2em; width:3px;
+  border-radius:2px; background:var(--kog-gold);
+}
+
+/* ----- Expanders ----- */
+[data-testid="stExpander"]{
+  border:1px solid rgba(214,176,92,.16); border-radius:12px;
+  background:rgba(255,255,255,.012);
+}
+[data-testid="stExpander"] summary:hover{ color:var(--kog-gold-bright); }
+
+/* ----- Dataframes ----- */
+[data-testid="stDataFrame"]{ border:1px solid rgba(214,176,92,.14); border-radius:10px; }
+
+/* ----- Sidebar ----- */
+[data-testid="stSidebar"]{ border-right:1px solid var(--kog-gold-dim); }
+</style>
+"""
+st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def _secret(name: str, default=None):
@@ -147,10 +210,15 @@ def pl_breakdown_rows(bucket_map: dict, label_col: str) -> list:
     return out
 
 
-st.title("🃏 Kort og Godt")
 st.markdown(
-    f"<div style='color:#B8912E;font-size:0.8rem;font-weight:600;"
-    f"margin-top:-10px;margin-bottom:4px'>v{APP_VERSION} · beta</div>",
+    f"""
+    <div class="kog-header">
+      <span class="kog-logo">🃏</span>
+      <h1 class="kog-title">Kort og Godt</h1>
+      <span class="kog-tagline">TCG sealed-price radar — buy Danish, watch global</span>
+      <span class="kog-ver">v{APP_VERSION} · beta</span>
+    </div>
+    """,
     unsafe_allow_html=True)
 
 if "_flash" in st.session_state:
@@ -175,7 +243,7 @@ with tab_scan:
     col_btn, col_info = st.columns([1, 2])
     with col_btn:
         scan_clicked = st.button("🔍  SCAN", type="primary",
-                                 use_container_width=True)
+                                 width="stretch")
     with col_info:
         metric_slot = st.empty()
         metric_slot.metric("Last scan", last_scan_display())
@@ -346,7 +414,7 @@ with tab_scan:
             st.toast("Discord: pinged " + ", ".join(parts))
 
     st.dataframe(
-        rows, use_container_width=True, hide_index=True,
+        rows, width="stretch", hide_index=True,
         column_config={"Link": st.column_config.LinkColumn(
             "Link", display_text="open shop")},
     )
@@ -401,7 +469,7 @@ with tab_scan:
                         "Error": r["error"] or "",
                         "URL": r["url"],
                     })
-                st.dataframe(src_rows, use_container_width=True,
+                st.dataframe(src_rows, width="stretch",
                              hide_index=True,
                              column_config={"URL": st.column_config.LinkColumn(
                                  "URL", display_text="source")})
@@ -577,7 +645,7 @@ with tab_collection:
     editor_df = pd.DataFrame(editor_rows, columns=editor_cols)
     edited = st.data_editor(
         editor_df, num_rows="dynamic", hide_index=True,
-        use_container_width=True, key="holdings_editor",
+        width="stretch", key="holdings_editor",
         column_config={
             "id": None,     # hidden internal key
             "pid": None,    # hidden watchlist-product id (survives display)
@@ -679,13 +747,13 @@ with tab_collection:
         if len(bp) > 1 or (bp and "(unknown)" not in bp):
             st.markdown("**By person**")
             st.dataframe(pl_breakdown_rows(bp, "Person"),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
 
         bg = val["by_game"]
         if len(bg) > 1:
             st.markdown("**By game**")
             st.dataframe(pl_breakdown_rows(bg, "Game"),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
             # Total P/L (unrealized + realized) per game — the portfolio at a glance.
             game_pl = {g: bg[g]["unrealized_pl"] + bg[g]["realized_pl"]
                        for g in bg}
@@ -696,7 +764,7 @@ with tab_collection:
         if len(bs) > 1:
             st.markdown("**By set**")
             st.dataframe(pl_breakdown_rows(bs, "Set"),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
 
         # Per-holding breakdown, optionally scoped to one person ("just me").
         present = sorted({(r.added_by or "(unknown)") for r in val["rows"]})
@@ -723,7 +791,7 @@ with tab_collection:
                                + (f" @ {r.observed_at[:16].replace('T', ' ')}"
                                   if r.observed_at else "")) or "–",
             })
-        st.dataframe(hrows, use_container_width=True, hide_index=True)
+        st.dataframe(hrows, width="stretch", hide_index=True)
 
     # -- Realized (sold holdings) -------------------------------------------
     if val["n_sold"]:
@@ -750,7 +818,7 @@ with tab_collection:
                         if s.get("roi_pct") is not None else "–"),
                 "Sold date": s["sold_date"] or "–",
             })
-        st.dataframe(srows, use_container_width=True, hide_index=True)
+        st.dataframe(srows, width="stretch", hide_index=True)
 
         st.download_button(
             "📄 Export sales CSV",
@@ -781,7 +849,7 @@ with tab_collection:
             st.caption("Grouped by the calendar year of the sale date — the "
                        "Danish tax year. Sales with no parseable date fall under "
                        "'unknown'.")
-            st.dataframe(yrows, use_container_width=True, hide_index=True)
+            st.dataframe(yrows, width="stretch", hide_index=True)
             year_pl = {str(k): rby[k]["pl"] for k in keys if k != "unknown"}
             if year_pl:
                 st.bar_chart({"Realized P/L (DKK)": year_pl}, height=200)
@@ -835,7 +903,7 @@ with tab_config:
     if _bad:
         st.warning(f"{_bad} source(s) need attention (errors or drift). "
                    "See the red/orange rows below.")
-    st.dataframe(_hrows, use_container_width=True, hide_index=True)
+    st.dataframe(_hrows, width="stretch", hide_index=True)
 
     st.subheader("Triggers")
     st.caption("Edit and press **Save triggers**. Empty = no trigger. "
@@ -857,7 +925,7 @@ with tab_config:
             "Not before": t.get("not_before"),
         })
     edited = st.data_editor(
-        trig_rows, hide_index=True, use_container_width=True,
+        trig_rows, hide_index=True, width="stretch",
         disabled=["id", "Product"], key="trig_editor",
         column_config={"Watch": st.column_config.CheckboxColumn(
             "Watch", help="Parked/monitored item — shows ⏳ WATCH until it "

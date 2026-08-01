@@ -1,6 +1,10 @@
 # Streamlit configuration (safe to commit — no secrets here).
-# Dark + gold to match the app icon. Delete this [theme] block for Streamlit's
-# default look.
+# v0.9 "black & gold" trading-card theme, matching the app icon. Delete this
+# [theme] block for Streamlit's default look.
 [theme]
 base = "dark"
-primaryColor = "#D6B05C"
+primaryColor = "#D6B05C"              # gold accent
+backgroundColor = "#0F0D0A"           # deep warm near-black
+secondaryBackgroundColor = "#1A1712"  # warm dark for cards / sidebar / inputs
+textColor = "#EDE9E0"                 # warm off-white
+font = "sans serif"
