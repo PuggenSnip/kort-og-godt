@@ -9,15 +9,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
+import extra_streamlit_components as stx
 import pandas as pd
 import streamlit as st
 
+import auth
 import scanner
 
-APP_VERSION = "1.2.1"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.0"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -125,12 +128,96 @@ def _require_login() -> None:
     st.title("🔒 Kort og Godt")
     st.caption("Enter the shared password to continue.")
     entered = st.text_input("Password", type="password")
+    remember = st.checkbox(
+        "Remember me on this device", value=True,
+        help=f"Stay logged in on this browser for {auth.REMEMBER_DAYS} days.")
     if entered and entered == password:
         st.session_state["_authed"] = True
+        st.session_state["_remember"] = bool(remember)
+        st.session_state.pop("_logged_out", None)   # a fresh login re-enables restore
         st.rerun()
     elif entered:
         st.error("Wrong password.")
     st.stop()
+
+
+def _restore_and_logout() -> None:
+    """Remember-me plumbing, run before the login gate. Handles a pending logout
+    and, on a fresh visit, restores auth + person from the browser cookie.
+    A no-op unless APP_PASSWORD is set (i.e. the shared cloud deployment).
+
+    Reads use the native, synchronous ``st.context.cookies`` (the cookie sent
+    with this page load) — no async component round-trip, so no login flash. The
+    cookie component is touched only to WRITE (login) or EXPIRE (logout)."""
+    pw = _secret("APP_PASSWORD")
+    if not pw:
+        return
+    # Logout is deferred here from the sidebar button so the expiring-cookie
+    # write lands on a run that ends in st.stop() (the login screen), never one
+    # immediately followed by st.rerun() — otherwise the browser write can be
+    # dropped before it flushes.
+    if st.session_state.get("_do_logout"):
+        try:
+            stx.CookieManager(key="kog_cm").set(
+                auth.COOKIE_NAME, "", key="kog_forget", max_age=0)
+        except Exception:       # noqa: BLE001 — logout must never crash the app
+            pass
+        for k in ("_authed", "_person", "_remember", "_cookie_target",
+                  "_cookie_writes_left", "_do_logout", "_restored_person"):
+            st.session_state.pop(k, None)
+        # st.context.cookies still reports the (now client-side-deleted) cookie
+        # for the rest of this session, so guard against re-restoring it.
+        st.session_state["_logged_out"] = True
+        return
+    if st.session_state.get("_logged_out") or st.session_state.get("_authed"):
+        return
+    try:
+        raw = st.context.cookies.get(auth.COOKIE_NAME)
+    except Exception:           # noqa: BLE001 — defensive on older Streamlit
+        raw = None
+    person = auth.parse_remember_cookie(raw, pw)
+    if person is None and raw:      # tolerate any stray percent-encoding
+        person = auth.parse_remember_cookie(unquote(raw), pw)
+    if person is not None:
+        st.session_state["_authed"] = True
+        st.session_state["_remember"] = True        # refresh (sliding) on write
+        st.session_state["_restored_person"] = person   # applied once cfg is loaded
+
+
+_COOKIE_WRITE_BURST = 3     # renders to keep the cookie component mounted so the
+                            # write flushes across esc's async getAll round-trip
+
+
+def _maybe_write_remember_cookie(person: str) -> None:
+    """Persist auth + person to a browser cookie so the next visit skips both
+    gates. Shared-deploy only.
+
+    The cookie component must stay mounted for a couple of renders for the write
+    to actually reach the browser (esc fires an async getAll on mount that reruns
+    the script). So we write in a short *burst* whenever the target changes — a
+    fresh visit, a restore, or Switch user — then stop. Writing only in a burst
+    (rather than on every rerun) still refreshes the 30-day window once per visit
+    and keeps the current person after Switch user, while avoiding a subtle
+    cross-tab bug: a still-authenticated sibling tab would otherwise re-create,
+    on its next interaction, a cookie that another tab just deleted at logout.
+    (A fully cross-tab-durable logout would need server-side token revocation —
+    out of scope for this small private group; see README.)"""
+    pw = _secret("APP_PASSWORD")
+    if not pw or not st.session_state.get("_remember"):
+        return
+    if st.session_state.get("_cookie_target") != person:    # (re)arm the burst
+        st.session_state["_cookie_target"] = person
+        st.session_state["_cookie_writes_left"] = _COOKIE_WRITE_BURST
+    if st.session_state.get("_cookie_writes_left", 0) <= 0:
+        return
+    st.session_state["_cookie_writes_left"] -= 1
+    try:
+        expires = datetime.now(timezone.utc) + timedelta(days=auth.REMEMBER_DAYS)
+        stx.CookieManager(key="kog_cm").set(
+            auth.COOKIE_NAME, auth.make_remember_cookie(pw, person),
+            key="kog_set", expires_at=expires, same_site="strict")
+    except Exception:           # noqa: BLE001 — remember-me is best-effort
+        pass
 
 
 def _require_person(conn, cfg) -> str:
@@ -166,10 +253,17 @@ def _db():
     return scanner.get_db(_secret("DATABASE_URL"))
 
 
+_restore_and_logout()   # remember-me: may auto-set _authed + stash the person
 _require_login()
 conn = _db()
 cfg = scanner.get_config(conn)
 settings = cfg["settings"]
+
+# Apply a cookie-restored person now that the roster is loaded (skips the name
+# pick). Only honour a name still on the roster; otherwise fall through and ask.
+_restored = st.session_state.pop("_restored_person", None)
+if _restored and _restored in settings.get("people", []):
+    st.session_state["_person"] = _restored
 
 # Person gate FIRST — it may st.stop(), so the login / name-pick screen never
 # pays for the heavy read-caching work below.
@@ -179,6 +273,13 @@ with st.sidebar:
     if st.button("Switch user"):
         st.session_state.pop("_person", None)
         st.rerun()
+    if _secret("APP_PASSWORD") and st.button("Log out"):
+        st.session_state["_do_logout"] = True
+        st.rerun()
+
+# Persist login + person to a browser cookie (shared deploy only). Placed on the
+# main render — which does not end in st.rerun() — so the write reliably flushes.
+_maybe_write_remember_cookie(person)
 
 
 # ---- Read caching -------------------------------------------------------

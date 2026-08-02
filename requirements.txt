@@ -1,4 +1,5 @@
 streamlit>=1.49
+extra-streamlit-components>=0.1.71,<0.2
 httpx>=0.27
 selectolax>=0.3.21
 pillow>=10.0

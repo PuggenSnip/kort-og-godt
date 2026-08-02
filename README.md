@@ -55,6 +55,23 @@ secrets; leave them unset for local single-user use. Optionally set
 ≥ 10 % in price, or a watched preorder first goes live. Full step-by-step in
 **[DEPLOY.md](DEPLOY.md)**.
 
+## What's new in v1.3 — Remember me
+
+- **Stay logged in** — tick *Remember me on this device* at the password prompt
+  and the shared login **and** your name are remembered on that browser for 30
+  days, so a returning visit skips both prompts (Streamlit otherwise forgets you
+  whenever the app sleeps or the tab closes). A **Log out** button in the sidebar
+  clears it. Only active on the shared deployment (when `APP_PASSWORD` is set);
+  local single-user runs are unchanged.
+- The cookie stores a one-way hash of the password (never the password itself),
+  so changing `APP_PASSWORD` invalidates every remembered device automatically.
+- *Caveat:* logout is per-device and best-effort. If you have the app open in two
+  tabs at once, logging out in one deletes the cookie, but a still-open second
+  tab can re-create it on its next click. Close the other tabs (or just don't
+  tick *Remember me* on a shared computer). A fully cross-tab-durable logout
+  would need server-side session revocation — heavier than this small group
+  needs.
+
 ## What's new in v1.0 — watches, portfolio, Cardmarket, hardening
 
 The first stable release (30 products, 8 Danish shops). On top of the v0.7
