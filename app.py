@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.0"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.1"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -215,7 +215,11 @@ def _maybe_write_remember_cookie(person: str) -> None:
         expires = datetime.now(timezone.utc) + timedelta(days=auth.REMEMBER_DAYS)
         stx.CookieManager(key="kog_cm").set(
             auth.COOKIE_NAME, auth.make_remember_cookie(pw, person),
-            key="kog_set", expires_at=expires, same_site="strict")
+            # SameSite=Lax (not Strict): a remember-me cookie must be sent on the
+            # top-level navigation when you reopen the app from a bookmark / new
+            # tab / link. Strict withholds it there, so login never restored on
+            # the live site even though it "worked" on a same-session reload.
+            key="kog_set", expires_at=expires, same_site="lax")
     except Exception:           # noqa: BLE001 — remember-me is best-effort
         pass
 
