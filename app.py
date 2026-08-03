@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.2"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.3"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -171,13 +171,28 @@ def _restore_and_logout() -> None:
         return
     if st.session_state.get("_logged_out") or st.session_state.get("_authed"):
         return
+    # Read the remember-me cookie. Fast path: the native, synchronous
+    # st.context.cookies (works locally, no component flash). It does NOT surface
+    # the JS-set cookie on Streamlit Community Cloud's proxy, though — so when it
+    # comes up empty we fall back to reading through the CookieManager component
+    # (same-origin iframe, reliable on Cloud; this is how streamlit-authenticator
+    # does it). The component's getAll is async — {} on first render, then a
+    # rerun delivers the real cookies — so a fresh restore costs one extra rerun
+    # (a brief login-screen flash) rather than the password prompt.
+    def _person_from(raw):
+        if not raw:
+            return None
+        return (auth.parse_remember_cookie(raw, pw)
+                or auth.parse_remember_cookie(unquote(raw), pw))
     try:
-        raw = st.context.cookies.get(auth.COOKIE_NAME)
+        person = _person_from(st.context.cookies.get(auth.COOKIE_NAME))
     except Exception:           # noqa: BLE001 — defensive on older Streamlit
-        raw = None
-    person = auth.parse_remember_cookie(raw, pw)
-    if person is None and raw:      # tolerate any stray percent-encoding
-        person = auth.parse_remember_cookie(unquote(raw), pw)
+        person = None
+    if person is None:
+        try:
+            person = _person_from(stx.CookieManager(key="kog_cm").get(auth.COOKIE_NAME))
+        except Exception:       # noqa: BLE001 — component read is best-effort
+            person = None
     if person is not None:
         st.session_state["_authed"] = True
         st.session_state["_remember"] = True        # refresh (sliding) on write
