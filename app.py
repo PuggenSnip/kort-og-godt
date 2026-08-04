@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.3"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.4"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -239,64 +239,6 @@ def _maybe_write_remember_cookie(person: str) -> None:
         pass
 
 
-def _debug_cookie_panel() -> None:
-    """?debug=1 diagnostic for the remember-me cookie on the live deploy (which
-    local testing can't reach — locally it works). Shows what the SERVER sees
-    (st.context.cookies) vs what the COMPONENT reads (esc get_all) vs the BROWSER
-    (app-origin document.cookie) so we can pinpoint why restore fails on Cloud.
-    Gated behind ?debug=1; shows only the current visitor's own cookies. TEMP —
-    remove once fixed."""
-    import streamlit.components.v1 as _components
-    st.warning("🔎 Cookie debug (temporary — add/remove ?debug=1). "
-               "Screenshot this whole box.")
-    pw = _secret("APP_PASSWORD")
-    # 1) SERVER — what st.context.cookies (current restore path) sees.
-    try:
-        server = dict(st.context.cookies)
-    except Exception as e:      # noqa: BLE001
-        server = {"<error>": str(e)}
-    raw_s = server.get(auth.COOKIE_NAME)
-    st.write("**1) SERVER — st.context.cookies**")
-    st.json({"all_keys": list(server.keys()),
-             "kog_remember_present": auth.COOKIE_NAME in server,
-             "parsed_person": auth.parse_remember_cookie(raw_s, pw)})
-    # 2) COMPONENT — what esc's CookieManager reads from document.cookie.
-    try:
-        comp = stx.CookieManager(key="kog_dbg").get_all(key="kog_dbg_get")
-        raw_c = comp.get(auth.COOKIE_NAME) if isinstance(comp, dict) else None
-        st.write("**2) COMPONENT — CookieManager.get_all()**")
-        st.json({"keys": list(comp.keys()) if isinstance(comp, dict) else str(comp),
-                 "kog_remember_present": bool(raw_c),
-                 "parsed_person": auth.parse_remember_cookie(raw_c, pw)})
-    except Exception as e:      # noqa: BLE001
-        st.write("**2) COMPONENT read error:**", str(e))
-    # 3) SESSION auth flags.
-    st.write("**3) SESSION**")
-    st.json({k: st.session_state.get(k) for k in
-             ("_authed", "_person", "_remember", "_logged_out")})
-    # 4) BROWSER — origin of the component iframe + the app-origin document.cookie.
-    _components.html(
-        """
-<div style="font:12px/1.5 monospace;color:#eee;background:#1a1712;padding:10px;
-            border:1px solid #D6B05C;border-radius:8px">
-<b>4) BROWSER (component iframe)</b><div id="o"></div>
-<script>
-function L(k,v){var d=document.createElement('div');d.textContent=k+': '+v;
-  document.getElementById('o').appendChild(d);}
-L('iframe origin', location.origin);
-L('iframe document.cookie', document.cookie || '(empty)');
-try {
-  L('app(parent) origin', window.parent.location.origin);
-  var pc = window.parent.document.cookie || '(empty)';
-  L('app document.cookie', pc);
-  L('kog_remember in app cookies', pc.indexOf('kog_remember=')>=0 ? 'YES' : 'NO');
-  L('component SAME-ORIGIN as app', 'YES');
-} catch(e){ L('component SAME-ORIGIN as app', 'NO — '+e.message); }
-</script></div>
-""", height=210)
-    st.divider()
-
-
 def _require_person(conn, cfg) -> str:
     """Ask which shared user is here, so holdings and Cardmarket entries can be
     attributed. Chosen once per session; a new name joins the roster."""
@@ -331,8 +273,6 @@ def _db():
 
 
 _restore_and_logout()   # remember-me: may auto-set _authed + stash the person
-if st.query_params.get("debug") == "1":     # TEMP live cookie diagnostic
-    _debug_cookie_panel()
 _require_login()
 conn = _db()
 cfg = scanner.get_config(conn)
