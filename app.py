@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.4"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.5"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).

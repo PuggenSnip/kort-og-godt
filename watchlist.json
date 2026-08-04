@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 13,
+    "config_version": 14,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -462,6 +462,31 @@
         "plausible_max_dkk": 3000
       },
       "notes": "MD#29: BUY ≤1500. SealedValue models it below MSRP — conflicting data, verify."
+    },
+    {
+      "id": "perfect-order-etb-en",
+      "name": "Pokémon Perfect Order ETB EN",
+      "sources": [
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-perfect-order-elite-trainer-box",
+          "ref_price_2026_08_04": 699
+        },
+        {
+          "shop": "andcards.dk",
+          "method": "jsonld_product",
+          "url": "https://www.andcards.dk/vare/pokemon-tcg-perfect-order-elite-trainer-box/",
+          "query": "perfect order elite trainer",
+          "ref_price_2026_08_04": 699
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 650,
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 1500
+      },
+      "notes": "Collection-tracking add (user owns the ETB). Two live DK sources (rogerz + andcards) validated 2026-08-04 @699 in stock."
     },
     {
       "id": "phantasmal-flames-etb-en",
