@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.6"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.7"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -310,13 +310,19 @@ _maybe_write_remember_cookie(person)
 def _data_version() -> str:
     """Fingerprint of what the cached views depend on: the newest observation id
     (bumped by every scan and Cardmarket entry) + a hash of the config. A change
-    to either busts the cache; otherwise every rerun is a cache hit."""
+    to either busts the cache; otherwise every rerun is a cache hit.
+
+    APP_VERSION is part of the key because Streamlit Cloud can keep the process
+    (and st.cache_data) alive across a redeploy — a release that changes the
+    SHAPE of a cached value would otherwise feed old-shape entries to new code
+    (v1.3.6 KeyError: 'units'). Releases are rare; one cold render per deploy
+    is a fair price for making that impossible."""
     row = conn.execute("SELECT MAX(id) AS m FROM observations").fetchone()
     max_obs = row["m"] if row and row["m"] is not None else 0
     cfg_h = hashlib.md5(
         json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)
         .encode("utf-8")).hexdigest()[:16]
-    return f"{max_obs}:{cfg_h}"
+    return f"{APP_VERSION}:{max_obs}:{cfg_h}"
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -386,12 +392,14 @@ def pl_breakdown_rows(bucket_map: dict, label_col: str) -> list:
         upct = (b["unrealized_pl"] / b["cost"] * 100) if b["cost"] else None
         out.append({
             label_col: key,
-            "Items": _units(b["units"]),      # physical units, not table rows
+            # .get fallbacks: a cached bucket built by an older release may
+            # lack the units keys — degrade to row counts, never crash.
+            "Items": _units(b.get("units", b["n_items"])),
             "Market value": scanner.fmt_dkk(b["market_value"], 0),
             "Cost basis": scanner.fmt_dkk(b["cost"], 0),
             "Unrealized P/L": scanner.fmt_dkk(b["unrealized_pl"], 0),
             "U-ROI": (f"{upct:+.1f}%" if upct is not None else "–"),
-            "Sold": _units(b["sold_units"]),
+            "Sold": _units(b.get("sold_units", b["n_sold"])),
             "Realized P/L": scanner.fmt_dkk(b["realized_pl"], 0),
         })
     return out
