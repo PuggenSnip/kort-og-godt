@@ -2153,9 +2153,9 @@ def _sold_year(sold_date: str) -> Optional[int]:
 def _empty_pl_bucket() -> dict:
     """A zeroed unrealized+realized aggregate — reused for the by-person,
     by-game and by-set breakdowns (same shape, different grouping key)."""
-    return {"n_items": 0, "n_valued": 0, "market_value": 0.0, "cost": 0.0,
-            "unrealized_pl": 0.0, "n_sold": 0, "realized_proceeds": 0.0,
-            "realized_cost": 0.0, "realized_pl": 0.0}
+    return {"n_items": 0, "units": 0.0, "n_valued": 0, "market_value": 0.0,
+            "cost": 0.0, "unrealized_pl": 0.0, "n_sold": 0, "sold_units": 0.0,
+            "realized_proceeds": 0.0, "realized_cost": 0.0, "realized_pl": 0.0}
 
 
 def value_collection(conn: Database, cfg: dict, collection: dict,
@@ -2239,7 +2239,8 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
 
     def _add_held(bucket_map: dict, key: str, r: HoldingValue) -> None:
         b = bucket_map.setdefault(key, _empty_pl_bucket())
-        b["n_items"] += 1
+        b["n_items"] += 1              # distinct holdings (rows)
+        b["units"] += r.quantity       # physical items owned
         if r.status == "valued":
             b["n_valued"] += 1
             b["market_value"] += r.line_value
@@ -2249,7 +2250,8 @@ def value_collection(conn: Database, cfg: dict, collection: dict,
 
     def _add_sold(bucket_map: dict, key: str, sr: dict) -> None:
         b = bucket_map.setdefault(key, _empty_pl_bucket())
-        b["n_sold"] += 1
+        b["n_sold"] += 1               # distinct sold holdings (rows)
+        b["sold_units"] += sr["quantity"]
         b["realized_proceeds"] += sr["proceeds"]
         if sr["unit_cost_dkk"] is not None:
             b["realized_cost"] += sr["unit_cost_dkk"] * sr["quantity"]

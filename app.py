@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.5"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.6"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -375,18 +375,23 @@ def last_scan_display() -> str:
 def pl_breakdown_rows(bucket_map: dict, label_col: str) -> list:
     """Format a value_collection breakdown map (by_person/by_game/by_set) into
     display rows — same columns for all three so they read consistently."""
+    def _units(x):
+        # Quantities are stored as floats; show 4 rather than 4.0 (a fractional
+        # qty — unusual but allowed — still displays faithfully).
+        return int(x) if float(x).is_integer() else x
+
     out = []
     for key in sorted(bucket_map):
         b = bucket_map[key]
         upct = (b["unrealized_pl"] / b["cost"] * 100) if b["cost"] else None
         out.append({
             label_col: key,
-            "Items": b["n_items"],
+            "Items": _units(b["units"]),      # physical units, not table rows
             "Market value": scanner.fmt_dkk(b["market_value"], 0),
             "Cost basis": scanner.fmt_dkk(b["cost"], 0),
             "Unrealized P/L": scanner.fmt_dkk(b["unrealized_pl"], 0),
             "U-ROI": (f"{upct:+.1f}%" if upct is not None else "–"),
-            "Sold": b["n_sold"],
+            "Sold": _units(b["sold_units"]),
             "Realized P/L": scanner.fmt_dkk(b["realized_pl"], 0),
         })
     return out
