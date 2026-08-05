@@ -141,32 +141,44 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 14   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 15   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
                            #  v12: watchlist-v2 sync — Mega Brave landed target;
-                           #  v13: remove all Japanese products (group preference))
+                           #  v13: remove all Japanese products (group preference);
+                           #  v14: + Perfect Order ETB (collection tracking);
+                           #  v15: 5 Aug brief — no-YGO rule, retire TMNT +
+                           #       Riftbound Origins, revised buy targets)
 
-# Conditional trigger corrections: product_id -> (old value, new value).
-# _migrate_config bumps buy_below_dkk from old→new ONLY when it is still the old
+# Conditional trigger corrections: product_id -> {trigger key: (old, new)}.
+# _migrate_config bumps each key from old→new ONLY when it is still the old
 # value, so a user's own edit in Config → Triggers is never clobbered. This is
 # the one sanctioned trigger overwrite in an otherwise user-territory merge; an
 # entry that already matches `new` on a migrated DB is a harmless no-op.
 _CONDITIONAL_TARGET_FIXES = {
     # v11 — 30th-Celebration watch targets: shelf MSRP → landed MSRP.
-    "pkmn-30th-celebration-etb-en": (799, 850),
-    "pkmn-30th-celebration-bundle-en": (499, 550),
-    "pkmn-30th-celebration-upc-en": (2199, 2250),
+    "pkmn-30th-celebration-etb-en": {"buy_below_dkk": (799, 850)},
+    "pkmn-30th-celebration-bundle-en": {"buy_below_dkk": (499, 550)},
+    "pkmn-30th-celebration-upc-en": {"buy_below_dkk": (2199, 2250)},
+    # v15 — 5 Aug brief: Hobbit Play post-release dip target 1100→1200
+    # (mtgwebshop raised the preorder 1299→1499); FF Collector €700-grail →
+    # the brief's standing "≤€850 = consider" (landed); Pitch Black buy
+    # window declared open — DK ceiling to 1600 (Symbizon 1599 acceptable),
+    # CM entry to €190 (floor bounced at €189.90; do-not-chase stays via
+    # the unchanged cardmarket_stable_days guard).
+    "mtg-hobbit-play-booster-box": {"buy_below_dkk": (1100, 1200)},
+    "mtg-final-fantasy-collector-booster-box": {"buy_below_dkk": (5220, 6390)},
+    "pitch-black-booster-box-en": {"buy_below_dkk": (1450, 1600),
+                                   "cardmarket_buy_below_eur": (185, 190)},
 }
 
-# v13 — products removed from the list (the first REMOVE operation in this
-# otherwise add-only merge). The group does not want Japanese-language products,
-# so all 11 JP boxes are dropped. Only ids the tool lists here are removed; a
-# user's own products are untouched. A collection holding linked to a removed
-# product keeps its row + link and simply loses live valuation until/unless the
-# product ever returns.
+# Products removed from the list (the REMOVE side of the otherwise add-only
+# merge). Only ids listed here are removed; a user's own products are
+# untouched. A collection holding linked to a removed product keeps its row +
+# link and simply loses live valuation until/unless the product ever returns.
 _REMOVED_PRODUCT_IDS = frozenset({
+    # v13 — group rule: no Japanese-language products.
     "pokemon-151-jp-booster-box",
     "mega-brave-jp-booster-box",
     "abyss-eye-jp-booster-box",
@@ -178,6 +190,12 @@ _REMOVED_PRODUCT_IDS = frozenset({
     "terastal-festival-ex-jp-booster-box",
     "black-bolt-jp-booster-box",
     "white-flare-jp-booster-box",
+    # v15 — group rule: no Yu-Gi-Oh (investment-only ruleset, 5 Aug brief).
+    "ygo-rarity-collection-5-ra05",
+    # v15 — retired triggers (5 Aug brief): TMNT floor firm at €259,
+    # Riftbound Origins 1st print sold out.
+    "mtg-tmnt-collector-booster-box",
+    "riftbound-origins-display-en",
 })
 
 
@@ -247,13 +265,13 @@ def _migrate_config(cfg: dict) -> bool:
     # target ONLY where the stored value is still the old figure, so a user's
     # own edit is never overwritten. See _CONDITIONAL_TARGET_FIXES.
     for p in cfg.get("products", []):
-        fix = _CONDITIONAL_TARGET_FIXES.get(p.get("id"))
-        if fix:
-            old, new = fix
+        fixes = _CONDITIONAL_TARGET_FIXES.get(p.get("id"))
+        if fixes:
             t = p.setdefault("triggers", {})
-            if t.get("buy_below_dkk") == old:
-                t["buy_below_dkk"] = new
-    # v13 — drop retired products (only the ids in _REMOVED_PRODUCT_IDS; user
+            for key, (old, new) in fixes.items():
+                if t.get(key) == old:
+                    t[key] = new
+    # Drop retired products (only the ids in _REMOVED_PRODUCT_IDS; user
     # products are untouched). Collection holdings linked to a removed product
     # keep their row + link; they just lose live valuation while it's absent.
     if _REMOVED_PRODUCT_IDS:

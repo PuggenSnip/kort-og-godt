@@ -2052,3 +2052,49 @@ def test_drift_pairs_all_ignores_null_method_rows(conn):
     put(conn, price=1000, days_ago=1, method=None)
     put(conn, price=2500, days_ago=0, method=None)
     assert ("test-product", "shopA", None) not in scanner.drift_pairs_all(conn)
+
+
+# ---------------------------------------------------------------------------
+# v1.3.9 — 5 Aug brief migration (no-YGO + retirements + revised targets)
+# ---------------------------------------------------------------------------
+
+def test_migrate_v15_removes_ygo_and_retired():
+    cfg = _seed_watch_config(14, {})
+    for rid in ("ygo-rarity-collection-5-ra05", "mtg-tmnt-collector-booster-box",
+                "riftbound-origins-display-en"):     # as a v14 DB would carry
+        cfg["products"].append({"id": rid, "name": rid, "sources": [],
+                                "triggers": {}})
+    scanner._migrate_config(cfg)
+    after = {p["id"] for p in cfg["products"]}
+    assert not (after & {"ygo-rarity-collection-5-ra05",
+                         "mtg-tmnt-collector-booster-box",
+                         "riftbound-origins-display-en"})
+    assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
+def test_migrate_v15_multi_key_conditional_fixes():
+    # A stored v14 config at the OLD targets is bumped on BOTH trigger keys of
+    # Pitch Black plus Hobbit/FF; a user-edited value is never clobbered.
+    cfg = _seed_watch_config(14, {})
+    def trig(pid):
+        return next(p for p in cfg["products"] if p["id"] == pid)["triggers"]
+    trig("mtg-hobbit-play-booster-box")["buy_below_dkk"] = 1100
+    trig("mtg-final-fantasy-collector-booster-box")["buy_below_dkk"] = 5220
+    pb = trig("pitch-black-booster-box-en")
+    pb["buy_below_dkk"] = 1450
+    pb["cardmarket_buy_below_eur"] = 185
+    scanner._migrate_config(cfg)
+    assert trig("mtg-hobbit-play-booster-box")["buy_below_dkk"] == 1200
+    assert trig("mtg-final-fantasy-collector-booster-box")["buy_below_dkk"] == 6390
+    assert pb["buy_below_dkk"] == 1600
+    assert pb["cardmarket_buy_below_eur"] == 190
+
+    cfg2 = _seed_watch_config(14, {})
+    def trig2(pid):
+        return next(p for p in cfg2["products"] if p["id"] == pid)["triggers"]
+    pb2 = trig2("pitch-black-booster-box-en")
+    pb2["buy_below_dkk"] = 1500                       # user's own edit
+    pb2["cardmarket_buy_below_eur"] = 185             # untouched -> fixes
+    scanner._migrate_config(cfg2)
+    assert pb2["buy_below_dkk"] == 1500               # kept
+    assert pb2["cardmarket_buy_below_eur"] == 190     # fixed

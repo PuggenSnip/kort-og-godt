@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 14,
+    "config_version": 15,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -80,8 +80,8 @@
         "url": "https://www.cardmarket.com/en/Pokemon/Products/Booster-Boxes/Pitch-Black-Booster-Box?language=1"
       },
       "triggers": {
-        "buy_below_dkk": 1450,
-        "cardmarket_buy_below_eur": 185,
+        "buy_below_dkk": 1600,
+        "cardmarket_buy_below_eur": 190,
         "cardmarket_stable_days": 14,
         "plausible_min_dkk": 900,
         "plausible_max_dkk": 3000
@@ -211,28 +211,6 @@
       "notes": "BUY ≤ 1300 kr DK shop / ≤ €140 Cardmarket. Ceiling for a walk-in purchase: 1400 kr. kelz0r's FF Play Booster Display was delisted (only the single pack remains, checked 2026-08-01)."
     },
     {
-      "id": "mtg-tmnt-collector-booster-box",
-      "name": "MTG TMNT Collector Booster Box",
-      "sources": [
-        {
-          "shop": "mtgwebshop.dk",
-          "method": "shopify_handle",
-          "url": "https://mtgwebshop.dk/products/magic-the-gathering-teenage-mutant-ninja-turtles-collector-booster-box-display",
-          "ref_price_2026_07_31": 2499
-        }
-      ],
-      "cardmarket": {
-        "url": "https://www.cardmarket.com/en/Magic/Products/Booster-Boxes/Teenage-Mutant-Ninja-Turtles-Collector-Booster-Box?language=1",
-        "ref_price_2026_07_29_eur": 259
-      },
-      "triggers": {
-        "cardmarket_buy_below_eur": 200,
-        "plausible_min_dkk": 1200,
-        "plausible_max_dkk": 3800
-      },
-      "notes": "Primarily Cardmarket-driven (BUY ≤ €200). mtgwebshop.dk carries the Collector box as a DK reference (2499 kr, out of stock on 2026-07-31)."
-    },
-    {
       "id": "mtg-hobbit-play-booster-box",
       "name": "MTG The Hobbit Play Booster Box",
       "sources": [
@@ -260,55 +238,12 @@
         "url": "https://www.cardmarket.com/en/Magic/Products/Booster-Boxes/The-Hobbit-Play-Booster-Box?language=1"
       },
       "triggers": {
-        "buy_below_dkk": 1100,
+        "buy_below_dkk": 1200,
         "not_before": "2026-08-14",
         "plausible_min_dkk": 700,
         "plausible_max_dkk": 2200
       },
       "notes": "BUY ≤ 1100 kr after the 2026-08-14 release; never preorder above that. kelz0r flags 'Risiko for allokering' on this (2026-08-01)."
-    },
-    {
-      "id": "riftbound-origins-display-en",
-      "name": "Riftbound Origins Display EN",
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/riftbound-origins-display-p-350999.html",
-          "query": "riftbound origins",
-          "ref_price_2026_07_29": 1499.95
-        },
-        {
-          "shop": "cardx.dk",
-          "method": "shopify_handle",
-          "url": "https://cardx.dk/products/riftbound-league-of-legends-tcg-origins-booster-box",
-          "ref_price_2026_08_01": 1495
-        },
-        {
-          "shop": "spilforsyningen.dk",
-          "method": "shopify_search",
-          "url": "https://spilforsyningen.dk/",
-          "query": "riftbound origins booster display",
-          "exclude": [
-            "pack",
-            "vendetta",
-            "skirmish",
-            "bundle"
-          ],
-          "ref_price_2026_08_01": 1699.95
-        }
-      ],
-      "cardmarket": {},
-      "triggers": {
-        "buy_below_dkk": 1250,
-        "manual_buy_flag": "riot_eol",
-        "plausible_min_dkk": 700,
-        "plausible_max_dkk": 2600
-      },
-      "flags": {
-        "riot_eol": false
-      },
-      "notes": "BUY ≤ 1250 kr, or immediately on news of a Riot end-of-life announcement (toggle the riot_eol flag in Config). spilforsyningen's Origins listing reuses a repurposed product handle, so it is matched by title search (honest no-match if they repurpose it again). Epic Panda delisted this 2026-07 — re-add an epicpanda source in Config if it returns."
     },
     {
       "id": "riftbound-unleashed-display",
@@ -624,7 +559,7 @@
         }
       ],
       "triggers": {
-        "buy_below_dkk": 5220,
+        "buy_below_dkk": 6390,
         "plausible_min_dkk": 3000,
         "plausible_max_dkk": 16000
       },
@@ -777,25 +712,6 @@
         "plausible_max_dkk": 2500
       },
       "notes": "WATCH — MD#10 (Pokémon Center ETB, 11 boosters; 'MSRP only' — the Ascended Heroes PC ETB went 7,7×). Only DK listing is Kelz0r (p-385656), an unpriced [PREORDER]: the page carries a 9999,95 placeholder price that the plausibility band (400–2500) correctly REFUSES, so it stays ⏳ WATCH and pings when a REAL price + stock appear. NO buy target on purpose — the PC ETB MSRP isn't published and I won't guess; set buy_below_dkk (≈ landed MSRP) once it prices, or just act on the 'went live' ping. Distinct from the regular Nidorina ETB (p-385654, 9 boosters); 'center' in the query keeps them apart. Validated live 2026-08-01."
-    },
-    {
-      "id": "ygo-rarity-collection-5-ra05",
-      "name": "Yu-Gi-Oh! Rarity Collection 5 (RA05) Display",
-      "sources": [
-        {
-          "shop": "kelz0r.dk",
-          "method": "kelz0r_product",
-          "url": "https://www.kelz0r.dk/magic/yugioh-booster-pakke-rarity-collectionbooster-display-box-med-pakker-p-370043.html",
-          "query": "rarity collection",
-          "ref_price_2026_08_01": 814.95
-        }
-      ],
-      "triggers": {
-        "buy_below_dkk": 895,
-        "plausible_min_dkk": 400,
-        "plausible_max_dkk": 1800
-      },
-      "notes": "MD#44 v2: YGO Quarter Century Rarity Collection wave (RA05), 24-pack display, all-foil (QCSR chases). RIP not invest. Target 895 = landed (shelf ~850 + shipping). Kelz0r 814,95 in stock (landed ~860) -> BUY (35 kr/pack rip). Validated live 2026-08-01."
     },
     {
       "id": "one-piece-op15-kamis-island-en",
