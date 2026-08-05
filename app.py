@@ -20,7 +20,19 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.9"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+# Streamlit Cloud can hot-swap a redeploy's app.py into a live process that
+# still holds the PREVIOUS release's imported modules (bitten twice: the
+# v1.2.1 and v1.3.8 deploys both threw AttributeError on functions that were
+# in the pushed scanner.py). If the loaded scanner predates this app.py,
+# reload it — the checkout on disk is already the new release. db is reloaded
+# first because scanner binds names from it (`from db import Database`).
+if not hasattr(scanner, "daily_cheapest_series_all"):   # v1.3.8+ API marker
+    import importlib
+    import db as _db
+    importlib.reload(_db)
+    scanner = importlib.reload(scanner)
+
+APP_VERSION = "1.3.10"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
