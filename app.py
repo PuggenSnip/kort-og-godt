@@ -32,7 +32,7 @@ if not hasattr(scanner, "daily_cheapest_series_all"):   # v1.3.8+ API marker
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.3.10"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.11"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -119,6 +119,15 @@ button[data-baseweb="tab"][aria-selected="true"]{ color:var(--kog-gold-bright); 
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
+
+
+# Streamlit Community Cloud checks the repo out under /mount/src and runs it on
+# US servers — so an in-app SCAN there is a NON-Danish vantage, exactly like the
+# GitHub cron runner: geo-priced shops (requires_dk_ip, e.g. flinamania) serve
+# USD to it and must be policy-skipped, not scanned into implausible-price
+# failures that wedge their products UNVERIFIED. Local runs (the group's own
+# PCs, in Denmark) scan those shops normally.
+_NON_DK_VANTAGE = Path(__file__).resolve().as_posix().startswith("/mount/src")
 
 
 def _secret(name: str, default=None):
@@ -494,7 +503,15 @@ with tab_scan:
                                       text=f"{done}/{n_sources} sources")
 
             try:
-                scan_id, observations = scanner.run_scan(cfg, conn, on_progress)
+                # Cloud-hosted scans flag the non-DK vantage on a COPY of the
+                # settings — never on cfg itself, which other code paths persist
+                # with put_config (a persisted flag would wrongly make the
+                # group's local DK scans skip geo-priced shops too).
+                scan_cfg = ({**cfg, "settings": {**cfg["settings"],
+                                                 "non_dk_vantage": True}}
+                            if _NON_DK_VANTAGE else cfg)
+                scan_id, observations = scanner.run_scan(scan_cfg, conn,
+                                                         on_progress)
             except Exception as e:  # noqa: BLE001 — never leave a half-scan crash
                 status.update(label=f"Scan aborted: {type(e).__name__}: {e}",
                               state="error")
