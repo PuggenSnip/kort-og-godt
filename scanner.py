@@ -432,8 +432,19 @@ class PoliteFetcher:
 
     # -- internals ----------------------------------------------------------
 
+    # robots.txt gets its own, much longer cache TTL (RFC 9309 allows up to
+    # 24 h). This matters on the shared deployment: the GitHub cron refreshes
+    # robots.txt ~8x/day from IPs the shops accept, while kelz0r rejects
+    # Streamlit Cloud's IPs — with the 1 h page TTL an in-app scan >1 h after
+    # a cron re-fetched robots from the blocked IP, hit the fail-closed
+    # "unreachable" path, and skipped every kelz0r source (seen live, scan
+    # #50). A 24 h robots TTL keeps the cron-warmed verdict valid all day.
+    ROBOTS_CACHE_TTL_SECONDS = 24 * 3600
+
     def _cache_get(self, url: str) -> Optional[FetchResult]:
-        ttl = self.settings["cache_ttl_seconds"]
+        ttl = (self.ROBOTS_CACHE_TTL_SECONDS
+               if url.endswith("/robots.txt")
+               else self.settings["cache_ttl_seconds"])
         row = self.conn.execute(
             "SELECT fetched_at, status, body FROM http_cache WHERE url = :url",
             {"url": url}).fetchone()

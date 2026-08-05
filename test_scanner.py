@@ -2098,3 +2098,26 @@ def test_migrate_v15_multi_key_conditional_fixes():
     scanner._migrate_config(cfg2)
     assert pb2["buy_below_dkk"] == 1500               # kept
     assert pb2["cardmarket_buy_below_eur"] == 190     # fixed
+
+
+def test_robots_cache_ttl_is_24h_not_page_ttl(conn):
+    # A robots.txt cached 2 h ago (past the 1 h PAGE TTL) is still valid (RFC
+    # 9309 allows 24 h). The cron keeps the shared robots cache warm from IPs
+    # the shops accept, so an in-app cloud scan must reuse it instead of
+    # re-fetching robots from its own (possibly bot-blocked) IP and skipping
+    # the whole domain via the fail-closed path.
+    two_h_ago = (datetime.now() - timedelta(hours=2)).isoformat(
+        timespec="seconds")
+    conn.execute(
+        "INSERT INTO http_cache (url, fetched_at, status, body) "
+        "VALUES ('https://shop.dk/robots.txt', :f, 200, :b)",
+        {"f": two_h_ago, "b": "User-agent: *\nDisallow: /x/\n"})
+    routes = {
+        "https://shop.dk/robots.txt": (200, {}, ""),      # would allow-all
+        "https://shop.dk/x/page": (200, {}, "page"),
+    }
+    f, t = _fetcher(conn, routes)
+    res = f.get("https://shop.dk/x/page")
+    f.close()
+    assert "blocked by robots.txt" in (res.error or "")   # 2h-old rules USED
+    assert "https://shop.dk/robots.txt" not in t.calls    # robots not re-fetched
