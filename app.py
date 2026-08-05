@@ -20,7 +20,7 @@ import streamlit as st
 import auth
 import scanner
 
-APP_VERSION = "1.3.7"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.8"    # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -327,24 +327,34 @@ def _data_version() -> str:
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def _view(version, _conn, _cfg):
-    """Everything the Scan + Config tabs need, computed in one pass (one bulk
-    observation query feeds all products) and cached by data version."""
+    """Everything the Scan + Config tabs need, computed from FIVE bulk queries
+    (observations, daily series, CM series, CM entries, drift pairs) and cached
+    by data version. On the cloud deploy every query is a cross-region round
+    trip, so the cold render must stay O(1) queries, not O(products)."""
     s = _cfg["settings"]
     latest = scanner.latest_observations_all(_conn)
+    daily = scanner.daily_cheapest_series_all(_conn)        # 60d, covers trends
+    cm_series = scanner.cardmarket_series_all(_conn)
+    cm_latest = scanner.latest_cm_entries_all(_conn)
+    cm_entries = scanner.cardmarket_entries_all(_conn)
+    drift = scanner.drift_pairs_all(_conn)
     prods = _cfg["products"]
     return {
         "latest": latest,
-        "verdicts": {p["id"]: scanner.product_verdict(_conn, p, s,
-                                                       prefetched=latest)
+        "verdicts": {p["id"]: scanner.product_verdict(
+                         _conn, p, s, prefetched=latest,
+                         prefetched_series=daily, prefetched_cm=cm_latest)
                      for p in prods},
-        "health": scanner.source_health(_conn, _cfg, prefetched=latest),
-        "series": {p["id"]: (scanner.daily_cheapest_series(_conn, p["id"]),
-                             scanner.cardmarket_series(_conn, p["id"]))
+        "health": scanner.source_health(_conn, _cfg, prefetched=latest,
+                                        prefetched_drift=drift),
+        "series": {p["id"]: (daily.get(p["id"], []),
+                             cm_series.get(p["id"], []))
                    for p in prods},
-        "cm_stats": {p["id"]: scanner.cardmarket_stats(_conn, p, s)
+        "cm_stats": {p["id"]: scanner.cardmarket_stats(
+                         _conn, p, s, prefetched_series=cm_series,
+                         prefetched_cm=cm_latest)
                      for p in prods},
-        "cm_entries": {p["id"]: scanner.list_cardmarket_entries(_conn, p["id"])
-                       for p in prods},
+        "cm_entries": {p["id"]: cm_entries.get(p["id"], []) for p in prods},
     }
 
 

@@ -1916,3 +1916,139 @@ def test_source_health_prefetched_matches(conn):
     pref = scanner.source_health(conn, cfg, prefetched=allm)
     assert [(r["shop"], r["status"], r["landed"]) for r in direct] == \
            [(r["shop"], r["status"], r["landed"]) for r in pref]
+
+
+# ---------------------------------------------------------------------------
+# v1.3.8 — bulk cold-render reads (each *_all == its per-product loop)
+# ---------------------------------------------------------------------------
+
+def _seed_two_products(conn):
+    """Multi-day, multi-product history incl. rows every bulk MUST exclude
+    (manual, reference-only, out-of-stock, failed)."""
+    for d, price in [(5, 1500), (3, 1450), (1, 1480), (0, 1400)]:
+        put(conn, product_id="p1", price=price, days_ago=d)
+    put(conn, product_id="p1", price=1300, days_ago=2, in_stock=False)
+    put(conn, product_id="p1", price=1200, days_ago=2, reference_only=True,
+        shop="usshop", method="pricecharting")
+    put(conn, product_id="p2", price=999, days_ago=1, shop="shopB",
+        method="kelz0r_product")
+    put(conn, product_id="p2", price=None, status="failed", error="boom",
+        shop="shopC", method="epicpanda")
+    # manual Cardmarket entries: p1 has two (one backdated LATER-entered), p2 none
+    put(conn, product_id="p1", shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=1490, price_native=200.0, days_ago=0)
+    put(conn, product_id="p1", shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=1490, price_native=180.0, days_ago=10)
+
+
+def test_daily_series_bulk_matches_per_product(conn):
+    _seed_two_products(conn)
+    allm = scanner.daily_cheapest_series_all(conn)
+    for pid in ("p1", "p2"):
+        assert allm.get(pid, []) == scanner.daily_cheapest_series(conn, pid)
+    assert scanner.daily_cheapest_series(conn, "p1")  # non-trivial seed
+    assert "no-such-product" not in allm
+
+
+def test_cardmarket_series_and_entries_bulk_match(conn):
+    _seed_two_products(conn)
+    ser_all = scanner.cardmarket_series_all(conn)
+    ent_all = scanner.cardmarket_entries_all(conn)
+    for pid in ("p1", "p2"):
+        assert ser_all.get(pid, []) == scanner.cardmarket_series(conn, pid)
+        assert ent_all.get(pid, []) == scanner.list_cardmarket_entries(conn, pid)
+    assert len(ser_all["p1"]) == 2                     # both entries present
+
+
+def test_latest_cm_entries_all_matches(conn):
+    _seed_two_products(conn)
+    allm = scanner.latest_cm_entries_all(conn)
+    direct = scanner._latest_cm_entry(conn, "p1")
+    assert allm["p1"]["id"] == direct["id"]
+    assert allm["p1"]["price_native"] == 200.0         # newest-DATED wins
+    assert "p2" not in allm
+
+
+def test_drift_pairs_all_matches_per_source(conn):
+    put(conn, product_id="p1", price=1000, days_ago=2)
+    put(conn, product_id="p1", price=1010, days_ago=1)
+    put(conn, product_id="p1", price=2500, days_ago=0)   # drift jump
+    put(conn, product_id="p2", price=500, shop="shopB", method="kelz0r_product")
+    pairs = scanner.drift_pairs_all(conn)
+    assert pairs[("p1", "shopA", "epicpanda")] == [2500, 1010]  # newest first, 2 max
+    assert pairs[("p2", "shopB", "kelz0r_product")] == [500]
+
+
+def _verdicts_equal(v1, v2):
+    assert (v1.code, v1.reason, v1.cheapest_dkk, v1.cheapest_shop,
+            v1.vs_trigger_dkk, v1.failures, v1.notes) == \
+           (v2.code, v2.reason, v2.cheapest_dkk, v2.cheapest_shop,
+            v2.vs_trigger_dkk, v2.failures, v2.notes)
+    assert (v1.trend.today, v1.trend.avg7, v1.trend.avg30,
+            v1.trend.days7, v1.trend.days30) == \
+           (v2.trend.today, v2.trend.avg7, v2.trend.avg30,
+            v2.trend.days7, v2.trend.days30)
+
+
+def test_verdict_fully_prefetched_matches(conn):
+    # Trend-bearing history + a fresh CM entry that touches the CM-BUY path.
+    for d, price in [(6, 1600), (5, 1580), (4, 1570), (3, 1560), (2, 1555),
+                     (1, 1540), (0, 1520)]:
+        put(conn, price=price, days_ago=d)
+    put(conn, shop="cardmarket", method="cardmarket_manual",
+        source_kind="manual", price=1100, price_native=140.0)
+    pre = dict(prefetched=scanner.latest_observations_all(conn),
+               prefetched_series=scanner.daily_cheapest_series_all(conn),
+               prefetched_cm=scanner.latest_cm_entries_all(conn))
+    # falling-trend product (trigger far below -> WAIT_FALLING exercises trend)
+    p_fall = make_product(triggers={"buy_below_dkk": 100})
+    _verdicts_equal(scanner.product_verdict(conn, p_fall, SETTINGS),
+                    scanner.product_verdict(conn, p_fall, SETTINGS, **pre))
+    # CM-driven BUY (threshold above the manual entry)
+    p_cm = make_product(triggers={"buy_below_dkk": 100,
+                                  "cardmarket_buy_below_eur": 150})
+    v1 = scanner.product_verdict(conn, p_cm, SETTINGS)
+    v2 = scanner.product_verdict(conn, p_cm, SETTINGS, **pre)
+    _verdicts_equal(v1, v2)
+    assert v1.code == "BUY" and "Cardmarket" in v1.reason
+    # plain BUY
+    p_buy = make_product()
+    _verdicts_equal(scanner.product_verdict(conn, p_buy, SETTINGS),
+                    scanner.product_verdict(conn, p_buy, SETTINGS, **pre))
+
+
+def test_source_health_prefetched_drift_matches(conn):
+    put(conn, price=1000, days_ago=1)
+    put(conn, price=2500, days_ago=0)                    # >2x -> drift flag
+    put(conn, shop="shopB", method="kelz0r_product", price=800, days_ago=0)
+    cfg = {"settings": SETTINGS, "products": [make_product(sources=[
+        {"shop": "shopA", "method": "epicpanda", "url": "http://a"},
+        {"shop": "shopB", "method": "kelz0r_product", "url": "http://b"}])]}
+    allm = scanner.latest_observations_all(conn)
+    drift = scanner.drift_pairs_all(conn)
+    direct = scanner.source_health(conn, cfg, prefetched=allm)
+    pref = scanner.source_health(conn, cfg, prefetched=allm,
+                                 prefetched_drift=drift)
+    key = lambda r: (r["shop"], r["status"], r["landed"], r["flag"], r["rank"])
+    assert [key(r) for r in direct] == [key(r) for r in pref]
+    assert any(r["flag"] for r in pref)                  # the jump IS flagged
+
+
+def test_cardmarket_stats_prefetched_matches(conn):
+    _seed_two_products(conn)
+    pre_s = scanner.cardmarket_series_all(conn)
+    pre_l = scanner.latest_cm_entries_all(conn)
+    for pid in ("p1", "p2"):
+        p = make_product(id=pid)
+        assert scanner.cardmarket_stats(conn, p, SETTINGS) == \
+               scanner.cardmarket_stats(conn, p, SETTINGS,
+                                        prefetched_series=pre_s,
+                                        prefetched_cm=pre_l)
+
+
+def test_drift_pairs_all_ignores_null_method_rows(conn):
+    # Parity with the per-source SQL (`method = :m` is never true for NULL):
+    # NULL-method rows must not create drift pairs through the bulk path.
+    put(conn, price=1000, days_ago=1, method=None)
+    put(conn, price=2500, days_ago=0, method=None)
+    assert ("test-product", "shopA", None) not in scanner.drift_pairs_all(conn)

@@ -1331,6 +1331,26 @@ def list_cardmarket_entries(conn: Database, product_id: str,
     return [dict(r) for r in rows]
 
 
+def cardmarket_entries_all(conn: Database,
+                           limit: int = 20) -> dict[str, list[dict]]:
+    """list_cardmarket_entries for EVERY product in one query — {pid: entries}.
+    The per-product LIMIT is applied in Python (manual entries are a tiny,
+    hand-typed table), preserving the exact per-product ordering and cap."""
+    rows = conn.execute(
+        """SELECT product_id, id, observed_at, price_native, added_by
+           FROM observations
+           WHERE source_kind = 'manual' AND price_native IS NOT NULL
+           ORDER BY product_id, observed_at DESC, id DESC""").fetchall()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        lst = out.setdefault(r["product_id"], [])
+        if len(lst) < limit:
+            d = dict(r)
+            d.pop("product_id")
+            lst.append(d)
+    return out
+
+
 def delete_cardmarket_entry(conn: Database, obs_id: int) -> bool:
     """Delete one manual Cardmarket entry by id. Scoped to source_kind='manual'
     so a scraped observation can never be removed through this path. Returns
@@ -1347,16 +1367,23 @@ def delete_cardmarket_entry(conn: Database, obs_id: int) -> bool:
 
 
 def cardmarket_stats(conn: Database, product: dict,
-                     settings: dict) -> Optional[dict]:
+                     settings: dict,
+                     prefetched_series: Optional[dict] = None,
+                     prefetched_cm: Optional[dict] = None) -> Optional[dict]:
     """Summary of a product's manual Cardmarket entries for the UI: count,
     latest price (EUR + landed DKK + date + age + staleness), min/max EUR over
     the last year, and whether the latest fresh entry meets the buy threshold.
-    None when there are no entries."""
+    None when there are no entries.
+
+    prefetched_series / prefetched_cm: cardmarket_series_all /
+    latest_cm_entries_all dicts — absence of a pid means "no entries"."""
     pid = product["id"]
-    series = cardmarket_series(conn, pid)          # (ts, EUR), oldest→newest
+    series = (prefetched_series.get(pid, []) if prefetched_series is not None
+              else cardmarket_series(conn, pid))   # (ts, EUR), oldest→newest
     if not series:
         return None
-    latest = _latest_cm_entry(conn, pid)           # by observed_at DESC
+    latest = (prefetched_cm.get(pid) if prefetched_cm is not None
+              else _latest_cm_entry(conn, pid))    # by observed_at DESC
     if latest is None:
         return None
     eur_vals = [p for _, p in series]
@@ -1492,6 +1519,28 @@ def daily_cheapest_series(conn: Database, product_id: str,
     return [(r["day"], r["price"]) for r in rows]
 
 
+def daily_cheapest_series_all(conn: Database,
+                              days: int = 60) -> dict[str, list[tuple[str, float]]]:
+    """daily_cheapest_series for EVERY product in one query — {pid: series}.
+    Products with no rows are simply absent (callers .get(pid, [])). Feed to
+    product_verdict(prefetched_series=...) and the chart loop so a cold page
+    render costs one query here instead of one per product."""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = conn.execute(
+        """SELECT product_id, substr(observed_at, 1, 10) AS day,
+                  MIN(landed_dkk) AS price
+           FROM observations
+           WHERE status = 'ok' AND in_stock = 1
+             AND reference_only = 0 AND source_kind != 'manual'
+             AND landed_dkk > 0 AND observed_at >= :since
+           GROUP BY product_id, day ORDER BY product_id, day""",
+        {"since": since}).fetchall()
+    out: dict[str, list[tuple[str, float]]] = {}
+    for r in rows:
+        out.setdefault(r["product_id"], []).append((r["day"], r["price"]))
+    return out
+
+
 def shop_series(conn: Database, product_id: str,
                 days: int = 60) -> dict[str, list[tuple[str, float]]]:
     since = (date.today() - timedelta(days=days)).isoformat()
@@ -1529,6 +1578,23 @@ def cardmarket_series(conn: Database, product_id: str,
     return [(r["observed_at"], r["price_native"]) for r in rows]
 
 
+def cardmarket_series_all(conn: Database,
+                          days: int = 365) -> dict[str, list[tuple[str, float]]]:
+    """cardmarket_series for EVERY product in one query — {pid: [(ts, EUR)]}."""
+    since = (date.today() - timedelta(days=days)).isoformat()
+    rows = conn.execute(
+        """SELECT product_id, observed_at, price_native FROM observations
+           WHERE source_kind = 'manual' AND status = 'ok'
+             AND price_native IS NOT NULL AND observed_at >= :since
+           ORDER BY product_id, observed_at""",
+        {"since": since}).fetchall()
+    out: dict[str, list[tuple[str, float]]] = {}
+    for r in rows:
+        out.setdefault(r["product_id"], []).append(
+            (r["observed_at"], r["price_native"]))
+    return out
+
+
 @dataclass
 class Trend:
     today: Optional[float] = None
@@ -1543,9 +1609,14 @@ class Trend:
         return (self.today - avg) / avg * 100.0
 
 
-def compute_trend(conn: Database, product_id: str,
-                  settings: dict) -> Trend:
-    series = daily_cheapest_series(conn, product_id, days=30)
+def compute_trend(conn: Database, product_id: str, settings: dict,
+                  series: Optional[list[tuple[str, float]]] = None) -> Trend:
+    """`series`: a prefetched daily_cheapest_series covering AT LEAST 30 days
+    (e.g. the 60-day one from daily_cheapest_series_all) — the 7/30-day windows
+    below already filter by date, so a longer series gives identical results.
+    None (the default) queries per-product as before."""
+    if series is None:
+        series = daily_cheapest_series(conn, product_id, days=30)
     today_str = date.today().isoformat()
     cut7 = (date.today() - timedelta(days=7)).isoformat()
     cut30 = (date.today() - timedelta(days=30)).isoformat()
@@ -1663,8 +1734,25 @@ def _latest_cm_entry(conn: Database,
         {"pid": product_id}).fetchone()
 
 
+def latest_cm_entries_all(conn: Database) -> dict[str, dict]:
+    """_latest_cm_entry for EVERY product in one query — {pid: full row}.
+    Same newest-DATED-wins ordering (observed_at DESC, id DESC per product);
+    products with no manual entry are absent from the dict."""
+    rows = conn.execute(
+        """SELECT * FROM observations
+           WHERE source_kind = 'manual' AND status = 'ok'
+           ORDER BY product_id, observed_at DESC, id DESC""").fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r["product_id"] not in out:      # first row per pid = the latest
+            out[r["product_id"]] = r
+    return out
+
+
 def product_verdict(conn: Database, product: dict,
-                    settings: dict, prefetched: Optional[dict] = None) -> Verdict:
+                    settings: dict, prefetched: Optional[dict] = None,
+                    prefetched_series: Optional[dict] = None,
+                    prefetched_cm: Optional[dict] = None) -> Verdict:
     """Apply the verdict rules in the documented priority order.
 
     0. manual strategic flag set (e.g. Riot EOL news) -> BUY  (explicit human
@@ -1690,7 +1778,13 @@ def product_verdict(conn: Database, product: dict,
     is_watch = bool(product.get("watch"))
     latest = latest_observations(conn, product["id"], product.get("sources", []),
                                  prefetched=prefetched)
-    trend = compute_trend(conn, product["id"], settings)
+    # prefetched_series / prefetched_cm (from daily_cheapest_series_all /
+    # latest_cm_entries_all) skip the two per-product queries below. A product
+    # ABSENT from a prefetched dict means "no data" (empty series / no entry),
+    # never "go query" — the dicts are built from whole-table queries.
+    trend = compute_trend(conn, product["id"], settings,
+                          series=(prefetched_series.get(product["id"], [])
+                                  if prefetched_series is not None else None))
     v = Verdict(code="HOLD", reason="", trend=trend)
 
     shop_rows = [r for r in latest
@@ -1726,7 +1820,8 @@ def product_verdict(conn: Database, product: dict,
         if r["allocation_risk"]:
             v.notes.append(f"⚠ {r['shop']}: 'Risiko for allokering' flagged")
 
-    cm_row = _latest_cm_entry(conn, product["id"])
+    cm_row = (prefetched_cm.get(product["id"]) if prefetched_cm is not None
+              else _latest_cm_entry(conn, product["id"]))
     buy_below = triggers.get("buy_below_dkk")
     avoid_above = triggers.get("avoid_above_dkk")
     cm_below = triggers.get("cardmarket_buy_below_eur")
@@ -2627,8 +2722,33 @@ def notify_watch_live(conn: Database, webhook_url: Optional[str],
     return new_ids if delivered else []
 
 
+def drift_pairs_all(conn: Database) -> dict[tuple, list[float]]:
+    """The last TWO good landed prices per (product, shop, method) in one
+    query — {(pid, shop, method): [current, previous]} (one-element list when
+    only one good observation exists). Feeds source_health's drift flag; the
+    per-source variant is the same query with a WHERE on the triple.
+    ROW_NUMBER() works on both backends (SQLite ≥3.25 bundled with Py3.12, PG)."""
+    rows = conn.execute(
+        """SELECT product_id, shop, method, landed_dkk FROM (
+               SELECT product_id, shop, method, landed_dkk,
+                      ROW_NUMBER() OVER (
+                          PARTITION BY product_id, shop, method
+                          ORDER BY id DESC) AS rn
+               FROM observations
+               WHERE status = 'ok' AND landed_dkk > 0
+                 AND method IS NOT NULL) t
+           WHERE rn <= 2
+           ORDER BY product_id, shop, method, rn""").fetchall()
+    out: dict[tuple, list[float]] = {}
+    for r in rows:
+        out.setdefault((r["product_id"], r["shop"], r["method"]),
+                       []).append(r["landed_dkk"])
+    return out
+
+
 def source_health(conn: Database, cfg: dict,
-                  prefetched: Optional[dict] = None) -> list:
+                  prefetched: Optional[dict] = None,
+                  prefetched_drift: Optional[dict] = None) -> list:
     """One row per configured (product, shop, method) source with its latest
     observation — for the Config-tab health dashboard. Each row carries a
     ``rank`` (lower = worse, for worst-first sorting) and a drift ``flag`` set
@@ -2665,15 +2785,19 @@ def source_health(conn: Database, cfg: dict,
                 except (TypeError, ValueError):
                     age_h = None
                 if status == "ok" and price:
-                    prev = conn.execute(
-                        """SELECT landed_dkk FROM observations
-                           WHERE product_id=:pid AND shop=:shop AND method=:m
-                             AND status='ok' AND landed_dkk > 0
-                           ORDER BY id DESC LIMIT 2""",
-                        {"pid": p["id"], "shop": s["shop"],
-                         "m": s["method"]}).fetchall()
-                    if len(prev) >= 2:
-                        cur, old = prev[0]["landed_dkk"], prev[1]["landed_dkk"]
+                    if prefetched_drift is not None:
+                        pair = prefetched_drift.get(
+                            (p["id"], s["shop"], s["method"]), [])
+                    else:
+                        pair = [r["landed_dkk"] for r in conn.execute(
+                            """SELECT landed_dkk FROM observations
+                               WHERE product_id=:pid AND shop=:shop AND method=:m
+                                 AND status='ok' AND landed_dkk > 0
+                               ORDER BY id DESC LIMIT 2""",
+                            {"pid": p["id"], "shop": s["shop"],
+                             "m": s["method"]}).fetchall()]
+                    if len(pair) >= 2:
+                        cur, old = pair[0], pair[1]
                         if old and (cur > old * 2 or cur < old * 0.5):
                             flag = "⚠ possible mis-parse/drift"
             watch_awaiting = is_watch and status not in ("ok", "skipped")
