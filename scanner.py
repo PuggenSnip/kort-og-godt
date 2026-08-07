@@ -141,7 +141,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 15   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 16   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -149,7 +149,9 @@ SEED_CONFIG_VERSION = 15   # bump when watchlist.json ships sources/settings
                            #  v13: remove all Japanese products (group preference);
                            #  v14: + Perfect Order ETB (collection tracking);
                            #  v15: 5 Aug brief — no-YGO rule, retire TMNT +
-                           #       Riftbound Origins, revised buy targets)
+                           #       Riftbound Origins, revised buy targets;
+                           #  v16: hosted_blocked_shops — kelz0r rejects the
+                           #       hosted app's IPs, skip pre-fetch there)
 
 # Conditional trigger corrections: product_id -> {trigger key: (old, new)}.
 # _migrate_config bumps each key from old→new ONLY when it is still the old
@@ -254,7 +256,8 @@ def _migrate_config(cfg: dict) -> bool:
             if s.get("shop") == "flinamania.dk":
                 s.setdefault("requires_dk_ip", True)
     # Adopt seed values for per-shop maps only where the user hasn't set one.
-    for map_key in ("shop_shipping_dkk", "preferred_shops"):
+    for map_key in ("shop_shipping_dkk", "preferred_shops",
+                    "hosted_blocked_shops"):
         seed_map = seed.get("settings", {}).get(map_key, {})
         mine = cfg.setdefault("settings", {}).setdefault(map_key, {})
         for shop, val in seed_map.items():
@@ -1066,6 +1069,8 @@ class Observation:
     reference_only: bool = False
     source_kind: str = "html"
     added_by: Optional[str] = None      # who entered a manual row; None if scraped
+    record: bool = True                 # False = don't persist (a vantage skip
+                                        # that must not shadow fresher good rows)
 
 
 def _to_dkk(amount: float, currency: str, settings: dict) -> float:
@@ -1150,6 +1155,22 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
     if source.get("requires_dk_ip") and settings.get("non_dk_vantage"):
         obs.status = "skipped"
         obs.error = "geo-priced shop — only checked from Denmark"
+        return obs
+
+    # Shops whose bot-guard rejects the hosted app's datacenter IPs (kelz0r
+    # drops Streamlit Cloud connections: robots.txt AND product pages time
+    # out). Fetching would burn 15 s per source and record failures that wedge
+    # the products UNVERIFIED — so the hosted vantage politely skips them
+    # up-front. record=False: unlike the geo skip above (where NO vantage
+    # scans the shop regularly), these shops ARE covered hours-fresh by the
+    # scheduled GitHub scans, and a persisted skip row would shadow that good
+    # data out of the latest-per-source verdict view for no gain.
+    if (settings.get("hosted_vantage")
+            and source["shop"] in (settings.get("hosted_blocked_shops") or {})):
+        obs.status = "skipped"
+        obs.error = ("shop blocks this host's IPs — covered by the "
+                     "scheduled scans")
+        obs.record = False
         return obs
 
     if method == "cardmarket_manual":
@@ -1455,7 +1476,7 @@ def run_scan(cfg: dict, conn: Database,
         for product in cfg["products"]:
             for source in product.get("sources", []):
                 obs = scan_source(product, source, fetcher, settings)
-                if obs.status != "manual":
+                if obs.status != "manual" and obs.record:
                     insert_observation(conn, obs, scan_id)
                     observations.append(obs)
                 if progress:

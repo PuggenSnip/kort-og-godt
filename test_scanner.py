@@ -2121,3 +2121,66 @@ def test_robots_cache_ttl_is_24h_not_page_ttl(conn):
     f.close()
     assert "blocked by robots.txt" in (res.error or "")   # 2h-old rules USED
     assert "https://shop.dk/robots.txt" not in t.calls    # robots not re-fetched
+
+
+# ---------------------------------------------------------------------------
+# v1.3.13 — hosted-vantage pre-fetch skip for bot-guarded shops (kelz0r)
+# ---------------------------------------------------------------------------
+
+def test_hosted_blocked_shop_skipped_prefetch_and_not_recorded(conn):
+    settings = dict(SETTINGS, record_fixtures=False, hosted_vantage=True,
+                    hosted_blocked_shops={"kelz0r.dk": "bot-guard"})
+    src = {"shop": "kelz0r.dk", "method": "kelz0r_product",
+           "url": "https://www.kelz0r.dk/magic/x-p-1.html"}
+    f, t = _fetcher(conn, {})           # any fetch would 404 — must not happen
+    f.settings.update(hosted_vantage=True,
+                      hosted_blocked_shops={"kelz0r.dk": "bot-guard"})
+    obs = scanner.scan_source(make_product(sources=[src]), src, f, settings)
+    f.close()
+    assert obs.status == "skipped"
+    assert obs.record is False
+    assert "blocks this host" in obs.error
+    assert t.calls == []                # pre-fetch: NO network at all
+
+
+def test_hosted_blocked_shop_scanned_normally_without_flag(conn):
+    # The cron / local DK runs don't set hosted_vantage — kelz0r is fetched.
+    settings = dict(SETTINGS, record_fixtures=False,
+                    hosted_blocked_shops={"kelz0r.dk": "bot-guard"})
+    src = {"shop": "kelz0r.dk", "method": "kelz0r_product",
+           "url": "https://shop.dk/x-p-1.html"}
+    routes = {"https://shop.dk/robots.txt": (404, {}, ""),
+              "https://shop.dk/x-p-1.html": (200, {}, "<html></html>")}
+    f, t = _fetcher(conn, routes)
+    obs = scanner.scan_source(make_product(sources=[src]), src, f, settings)
+    f.close()
+    assert "https://shop.dk/x-p-1.html" in t.calls      # really fetched
+    assert obs.record is True
+
+
+def test_run_scan_does_not_insert_unrecorded_skips(conn):
+    put(conn, shop="kelz0r.dk", method="kelz0r_product", price=800)  # cron's OK
+    cfg = {"settings": dict(SETTINGS, record_fixtures=False,
+                            hosted_vantage=True,
+                            hosted_blocked_shops={"kelz0r.dk": "bot-guard"}),
+           "products": [make_product(sources=[
+               {"shop": "kelz0r.dk", "method": "kelz0r_product",
+                "url": "https://www.kelz0r.dk/magic/x-p-1.html"}])]}
+    before = conn.execute(
+        "SELECT COUNT(*) AS n FROM observations").fetchone()["n"]
+    scan_id, observations = scanner.run_scan(cfg, conn)
+    after = conn.execute(
+        "SELECT COUNT(*) AS n FROM observations").fetchone()["n"]
+    assert after == before                       # skip row NOT persisted
+    assert observations == []                    # nor reported as scanned
+    # the cron's earlier OK row is still the latest -> price survives the scan
+    latest = scanner.latest_observations(conn, "test-product")
+    assert latest and latest[0]["status"] == "ok" and latest[0]["landed_dkk"] == 800
+
+
+def test_migrate_v16_merges_hosted_blocked_shops():
+    cfg = _seed_watch_config(15, {})
+    cfg["settings"].pop("hosted_blocked_shops", None)   # a v15 DB lacks it
+    scanner._migrate_config(cfg)
+    assert "kelz0r.dk" in cfg["settings"]["hosted_blocked_shops"]
+    assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION

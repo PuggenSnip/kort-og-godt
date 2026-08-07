@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 15,
+    "config_version": 16,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -24,6 +24,9 @@
     },
     "preferred_shops": {
       "br.dk": "1 års ombytning på uåbnede varer"
+    },
+    "hosted_blocked_shops": {
+      "kelz0r.dk": "bot-guard drops cloud-host IPs (Streamlit) — scheduled scans cover it"
     }
   },
   "products": [
