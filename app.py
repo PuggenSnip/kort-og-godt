@@ -21,18 +21,22 @@ import auth
 import scanner
 
 # Streamlit Cloud can hot-swap a redeploy's app.py into a live process that
-# still holds the PREVIOUS release's imported modules (bitten twice: the
-# v1.2.1 and v1.3.8 deploys both threw AttributeError on functions that were
-# in the pushed scanner.py). If the loaded scanner predates this app.py,
-# reload it — the checkout on disk is already the new release. db is reloaded
-# first because scanner binds names from it (`from db import Database`).
-if not hasattr(scanner, "daily_cheapest_series_all"):   # v1.3.8+ API marker
+# still holds the PREVIOUS release's imported modules (bitten three times:
+# v1.2.1 and v1.3.8 threw AttributeError; v1.3.13's kelz0r pre-fetch skip
+# silently never activated because the old hasattr-one-function probe was
+# blind to BEHAVIOR changes). If the loaded scanner is older than the version
+# this app.py was written against, reload it — the checkout on disk is
+# already the new release. db is reloaded first because scanner binds names
+# from it (`from db import Database`). RELEASE RULE: any change to scanner
+# behavior bumps scanner.SCANNER_API_VERSION and this constant together.
+_REQUIRED_SCANNER_API = 2
+if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     import importlib
     import db as _db
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.3.14"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.15"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).

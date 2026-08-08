@@ -38,6 +38,14 @@ VALUATION_BASES = ("replacement", "cardmarket")
 DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
                       "holdings": []}
 
+# Bumped whenever a release changes scanner BEHAVIOR (not just adds functions).
+# app.py compares this against the version it was written for and reloads a
+# stale module after a Streamlit-Cloud hot-swap — a hasattr probe on one
+# function proved blind to behavior changes (v1.3.13's kelz0r pre-fetch skip
+# never activated in a process whose scanner predated it but had the probed
+# v1.3.8 function). Keep in sync with _REQUIRED_SCANNER_API in app.py.
+SCANNER_API_VERSION = 2
+
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
     "timeout_seconds": 15,
@@ -70,6 +78,15 @@ DEFAULT_SETTINGS = {
     # A product's cheapest landed price falling by at least this % since the
     # previous scan fires a Discord price-drop alert (even if it is not a BUY).
     "price_drop_pct": 10,
+    # Shops whose bot-guard rejects the HOSTED app's datacenter IPs: skipped
+    # pre-fetch when settings.hosted_vantage is set (the Streamlit Cloud scan
+    # path). In DEFAULT_SETTINGS (not only the seed/migration) so the guard
+    # holds on every load via _normalize_settings, independent of config
+    # migration state. Harmless locally — hosted_vantage is never set there.
+    "hosted_blocked_shops": {
+        "kelz0r.dk": "bot-guard drops cloud-host IPs (Streamlit) — "
+                     "scheduled scans cover it",
+    },
 }
 
 

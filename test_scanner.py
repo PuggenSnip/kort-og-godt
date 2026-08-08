@@ -2184,3 +2184,14 @@ def test_migrate_v16_merges_hosted_blocked_shops():
     scanner._migrate_config(cfg)
     assert "kelz0r.dk" in cfg["settings"]["hosted_blocked_shops"]
     assert cfg["settings"]["config_version"] == scanner.SEED_CONFIG_VERSION
+
+
+def test_scanner_api_version_and_default_blocked_shops():
+    # The hot-swap guard contract: scanner exports an API version app.py can
+    # compare, and the hosted-blocked map is guaranteed by DEFAULT_SETTINGS
+    # (via _normalize_settings) independent of config-migration state.
+    assert isinstance(scanner.SCANNER_API_VERSION, int)
+    assert scanner.SCANNER_API_VERSION >= 2
+    assert "kelz0r.dk" in scanner.DEFAULT_SETTINGS["hosted_blocked_shops"]
+    normalized = scanner._normalize_settings({"settings": {}})
+    assert "kelz0r.dk" in normalized["settings"]["hosted_blocked_shops"]
