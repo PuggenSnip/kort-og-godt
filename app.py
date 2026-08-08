@@ -32,7 +32,7 @@ if not hasattr(scanner, "daily_cheapest_series_all"):   # v1.3.8+ API marker
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.3.13"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.14"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).

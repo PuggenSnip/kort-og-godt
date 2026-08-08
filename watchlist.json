@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 16,
+    "config_version": 17,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -382,6 +382,30 @@
         "plausible_max_dkk": 3200
       },
       "notes": "MD#30: BUY ≤1600 kr."
+    },
+    {
+      "id": "chaos-rising-pc-etb-en",
+      "name": "Pokémon Chaos Rising Pokémon Center ETB EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "pricecharting.com",
+          "method": "pricecharting",
+          "url": "https://www.pricecharting.com/game/pokemon-chaos-rising/elite-trainer-box-pokemon-center",
+          "pc_field": "used",
+          "currency": "USD",
+          "reference_only": true,
+          "ref_price_2026_08_08": 130.41
+        }
+      ],
+      "cardmarket": {
+        "url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Chaos-Rising-Pokemon-Center-Elite-Trainer-Box"
+      },
+      "triggers": {
+        "plausible_min_dkk": 300,
+        "plausible_max_dkk": 2500
+      },
+      "notes": "PC-exclusive (ME04, Fennekin full-art promo). NO Danish listing yet (verified 2026-08-08: all 8 shops + pokehulen swept; kelz0r has only the regular CR ETB) — parked as a reference-watch: US market via pricecharting (~30 ≈ 835 kr) + manual Cardmarket. Add the DK source + a LANDED target the day a shop lists it (kelz0r imported the 30th PC ETB, likely candidate)."
     },
     {
       "id": "perfect-order-booster-box-en",

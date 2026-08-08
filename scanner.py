@@ -141,7 +141,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 16   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 17   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -151,7 +151,8 @@ SEED_CONFIG_VERSION = 16   # bump when watchlist.json ships sources/settings
                            #  v15: 5 Aug brief — no-YGO rule, retire TMNT +
                            #       Riftbound Origins, revised buy targets;
                            #  v16: hosted_blocked_shops — kelz0r rejects the
-                           #       hosted app's IPs, skip pre-fetch there)
+                           #       hosted app's IPs, skip pre-fetch there;
+                           #  v17: + Chaos Rising PC ETB reference-watch)
 
 # Conditional trigger corrections: product_id -> {trigger key: (old, new)}.
 # _migrate_config bumps each key from old→new ONLY when it is still the old
