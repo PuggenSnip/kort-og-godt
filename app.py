@@ -36,7 +36,7 @@ if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.3.15"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.3.16"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -779,8 +779,11 @@ with tab_scan:
                     eur = st.number_input(
                         "Lowest (€)", min_value=0.0, step=1.0, value=None,
                         key=f"cm_{product['id']}",
-                        help="Paste the lowest Cardmarket price. Stored like "
-                             "scraped data (EUR × 7.46 → DKK).")
+                        help="Paste the lowest REAL Cardmarket price. Stored "
+                             "like scraped data (EUR × 7.46 → DKK). ⚠ Skip "
+                             "scam floors: 0/low-rating sellers (<50) or "
+                             "listings with URLs/shop links in the comment — "
+                             "use the cheapest credible seller instead.")
                 with cm_col3:
                     as_of = st.date_input(
                         "As of", value=date.today(), key=f"cmd_{product['id']}",

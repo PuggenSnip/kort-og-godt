@@ -2083,21 +2083,27 @@ def test_migrate_v15_multi_key_conditional_fixes():
     pb = trig("pitch-black-booster-box-en")
     pb["buy_below_dkk"] = 1450
     pb["cardmarket_buy_below_eur"] = 185
+    pb.pop("avoid_above_dkk", None)                   # a v14 store lacks it
     scanner._migrate_config(cfg)
     assert trig("mtg-hobbit-play-booster-box")["buy_below_dkk"] == 1200
     assert trig("mtg-final-fantasy-collector-booster-box")["buy_below_dkk"] == 6390
-    assert pb["buy_below_dkk"] == 1600
+    # v18 chain: 1450 -> 1600 (v15 window) -> 1500 (16 Aug last-call), and the
+    # (None, 1560) pair adds the do-not-chase ceiling where absent.
+    assert pb["buy_below_dkk"] == 1500
     assert pb["cardmarket_buy_below_eur"] == 190
+    assert pb["avoid_above_dkk"] == 1560
 
     cfg2 = _seed_watch_config(14, {})
     def trig2(pid):
         return next(p for p in cfg2["products"] if p["id"] == pid)["triggers"]
     pb2 = trig2("pitch-black-booster-box-en")
-    pb2["buy_below_dkk"] = 1500                       # user's own edit
+    pb2["buy_below_dkk"] = 1490                       # user's own edit
     pb2["cardmarket_buy_below_eur"] = 185             # untouched -> fixes
+    pb2["avoid_above_dkk"] = 1700                     # user's own ceiling
     scanner._migrate_config(cfg2)
-    assert pb2["buy_below_dkk"] == 1500               # kept
+    assert pb2["buy_below_dkk"] == 1490               # kept (matches no pair)
     assert pb2["cardmarket_buy_below_eur"] == 190     # fixed
+    assert pb2["avoid_above_dkk"] == 1700             # kept (not None)
 
 
 def test_robots_cache_ttl_is_24h_not_page_ttl(conn):

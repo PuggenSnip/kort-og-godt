@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 17,
+    "config_version": 18,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -83,13 +83,14 @@
         "url": "https://www.cardmarket.com/en/Pokemon/Products/Booster-Boxes/Pitch-Black-Booster-Box?language=1"
       },
       "triggers": {
-        "buy_below_dkk": 1600,
+        "buy_below_dkk": 1500,
         "cardmarket_buy_below_eur": 190,
         "cardmarket_stable_days": 14,
         "plausible_min_dkk": 900,
-        "plausible_max_dkk": 3000
+        "plausible_max_dkk": 3000,
+        "avoid_above_dkk": 1560
       },
-      "notes": "BUY if Cardmarket ≤ €185 stable 14 days, or any DK shop ≤ 1450 kr."
+      "notes": "16/8 brief: reversal CONFIRMED, LAST CALL before the 30th wave (16 Sept) — CM floor ~€187-190 ≈ 1.470-1.490 landed. DK trigger 1500; ≥1560 (€200+ship) = AVOID, do not chase. Aug 5 bottom (€171-180) held."
     },
     {
       "id": "ascended-heroes-etb-en",
@@ -246,7 +247,7 @@
         "plausible_min_dkk": 700,
         "plausible_max_dkk": 2200
       },
-      "notes": "BUY ≤ 1100 kr after the 2026-08-14 release; never preorder above that. kelz0r flags 'Risiko for allokering' on this (2026-08-01)."
+      "notes": "FIRED 16/8 two days post-release: CM floor €145-148 (4XTrading, 61K) ≈ 1.170 landed ≤ target 1200. DK retail (mtgwebshop 1499) NOT a buy. Glut (1.6K listings) may dip to €135-140. Ignore €58/€77 zero-rating scam listings."
     },
     {
       "id": "riftbound-unleashed-display",

@@ -158,7 +158,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 17   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 18   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -169,28 +169,34 @@ SEED_CONFIG_VERSION = 17   # bump when watchlist.json ships sources/settings
                            #       Riftbound Origins, revised buy targets;
                            #  v16: hosted_blocked_shops — kelz0r rejects the
                            #       hosted app's IPs, skip pre-fetch there;
-                           #  v17: + Chaos Rising PC ETB reference-watch)
+                           #  v17: + Chaos Rising PC ETB reference-watch;
+                           #  v18: 16 Aug brief — PB Box last-call 1500 +
+                           #       avoid ceiling 1560)
 
-# Conditional trigger corrections: product_id -> {trigger key: (old, new)}.
-# _migrate_config bumps each key from old→new ONLY when it is still the old
-# value, so a user's own edit in Config → Triggers is never clobbered. This is
-# the one sanctioned trigger overwrite in an otherwise user-territory merge; an
-# entry that already matches `new` on a migrated DB is a harmless no-op.
+# Conditional trigger corrections: product_id -> {trigger key: (old, new)} or
+# {trigger key: [(old1, new1), (old2, new2), ...]} — a CHAIN applied in order,
+# so a DB that skipped releases still lands on the final value. _migrate_config
+# bumps a key ONLY when it still holds the old value (None = key absent), so a
+# user's own edit in Config → Triggers is never clobbered. This is the one
+# sanctioned trigger overwrite in an otherwise user-territory merge; an entry
+# already matching `new` on a migrated DB is a harmless no-op.
 _CONDITIONAL_TARGET_FIXES = {
     # v11 — 30th-Celebration watch targets: shelf MSRP → landed MSRP.
     "pkmn-30th-celebration-etb-en": {"buy_below_dkk": (799, 850)},
     "pkmn-30th-celebration-bundle-en": {"buy_below_dkk": (499, 550)},
     "pkmn-30th-celebration-upc-en": {"buy_below_dkk": (2199, 2250)},
-    # v15 — 5 Aug brief: Hobbit Play post-release dip target 1100→1200
-    # (mtgwebshop raised the preorder 1299→1499); FF Collector €700-grail →
-    # the brief's standing "≤€850 = consider" (landed); Pitch Black buy
-    # window declared open — DK ceiling to 1600 (Symbizon 1599 acceptable),
-    # CM entry to €190 (floor bounced at €189.90; do-not-chase stays via
-    # the unchanged cardmarket_stable_days guard).
+    # v15 — 5 Aug brief: Hobbit Play post-release dip target 1100→1200;
+    # FF Collector €700-grail → "≤€850 = consider" (landed).
     "mtg-hobbit-play-booster-box": {"buy_below_dkk": (1100, 1200)},
     "mtg-final-fantasy-collector-booster-box": {"buy_below_dkk": (5220, 6390)},
-    "pitch-black-booster-box-en": {"buy_below_dkk": (1450, 1600),
-                                   "cardmarket_buy_below_eur": (185, 190)},
+    # v15 opened the Pitch Black buy window (1450→1600, CM €185→190);
+    # v18 — 16 Aug brief: reversal confirmed, LAST CALL — tighten the DK
+    # trigger to 1500 and add the €200+ship do-not-chase ceiling (AVOID at
+    # ≥1560), so Danish retail at 1599 reads AVOID, not BUY.
+    "pitch-black-booster-box-en": {"buy_below_dkk": [(1450, 1600),
+                                                     (1600, 1500)],
+                                   "cardmarket_buy_below_eur": (185, 190),
+                                   "avoid_above_dkk": (None, 1560)},
 }
 
 # Products removed from the list (the REMOVE side of the otherwise add-only
@@ -289,9 +295,12 @@ def _migrate_config(cfg: dict) -> bool:
         fixes = _CONDITIONAL_TARGET_FIXES.get(p.get("id"))
         if fixes:
             t = p.setdefault("triggers", {})
-            for key, (old, new) in fixes.items():
-                if t.get(key) == old:
-                    t[key] = new
+            for key, pairs in fixes.items():
+                if not isinstance(pairs, list):
+                    pairs = [pairs]
+                for old, new in pairs:      # chain: applied in release order
+                    if t.get(key) == old:
+                        t[key] = new
     # Drop retired products (only the ids in _REMOVED_PRODUCT_IDS; user
     # products are untouched). Collection holdings linked to a removed product
     # keep their row + link; they just lose live valuation while it's absent.
