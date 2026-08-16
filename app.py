@@ -29,14 +29,14 @@ import scanner
 # already the new release. db is reloaded first because scanner binds names
 # from it (`from db import Database`). RELEASE RULE: any change to scanner
 # behavior bumps scanner.SCANNER_API_VERSION and this constant together.
-_REQUIRED_SCANNER_API = 2
+_REQUIRED_SCANNER_API = 3
 if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     import importlib
     import db as _db
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.3.16"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.4.0"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -590,9 +590,13 @@ with tab_scan:
             # None (not "") renders as an empty cell — no dead 'open shop' link.
             "Link": v.cheapest_url or None,
         })
-    # Summary bar — verdict counts + a prominent "act now" callout.
+    # Summary bar — verdict counts + a prominent "act now" callout. Tracked
+    # singles are collection assets, not signals — they stay out of the counts
+    # and panels below (their expanders/charts remain in the Products list).
+    signal_products = scanner.alertable_products(cfg["products"])
     counts = {}
-    for v in verdicts.values():
+    for p in signal_products:
+        v = verdicts[p["id"]]
         counts[v.code] = counts.get(v.code, 0) + 1
     mc = st.columns(6)
     mc[0].metric("🟢 BUY", counts.get("BUY", 0))
@@ -602,7 +606,7 @@ with tab_scan:
     mc[4].metric("⚪ HOLD", counts.get("HOLD", 0))
     mc[5].metric("⚫ Unverified", counts.get("UNVERIFIED", 0))
 
-    buys = [(p["name"], verdicts[p["id"]]) for p in cfg["products"]
+    buys = [(p["name"], verdicts[p["id"]]) for p in signal_products
             if verdicts[p["id"]].code == "BUY"]
     if buys:
         st.success("**Act now — BUY:**\n\n" + "\n".join(
@@ -612,7 +616,7 @@ with tab_scan:
 
     # Watches — parked/monitored preorders & grails. Shown separately from the
     # act-now BUY box: no action needed, just tracking for the target moment.
-    watches = [(p["name"], verdicts[p["id"]]) for p in cfg["products"]
+    watches = [(p["name"], verdicts[p["id"]]) for p in signal_products
                if verdicts[p["id"]].code == "WATCH"]
     if watches:
         st.info("**⏳ Watching (preorders / grails — alert fires when priced ≤ "
@@ -638,7 +642,7 @@ with tab_scan:
                           "price": verdicts[p["id"]].cheapest_dkk,
                           "shop": verdicts[p["id"]].cheapest_shop,
                           "url": verdicts[p["id"]].cheapest_url}
-                         for p in cfg["products"]
+                         for p in signal_products
                          if verdicts[p["id"]].cheapest_dkk is not None]
         watch_items = [{"id": p["id"], "name": p["name"],
                         "price": verdicts[p["id"]].cheapest_dkk,
@@ -964,6 +968,60 @@ with tab_collection:
         scanner.put_collection(conn, collection)
         flash(f"Saved {len(new_holdings)} holding(s)")
         st.rerun()
+
+    # -- Track a single card ------------------------------------------------
+    with st.expander("➕ Track a single card"):
+        st.caption(
+            "Adds one card as a tracked item WITH a holding in your "
+            "collection. A **kelz0r product link** gives it a live DK price "
+            "(refreshed by the scheduled scans; valued at shelf price — no "
+            "shipping added). A **Cardmarket link** enables manual € entries "
+            "and their chart. Neither is required — without either, set a "
+            "Manual value on its holding row. Singles never appear in "
+            "BUY/AVOID verdicts or Discord alerts.")
+        sc1, sc2 = st.columns([3, 1])
+        s_name = sc1.text_input(
+            "Card name", key="sc_name",
+            placeholder="e.g. Ange Floette (Chaos Rising 075/086)")
+        s_qty = sc2.number_input("Qty", min_value=1, step=1, value=1,
+                                 key="sc_qty")
+        s_kelz = st.text_input(
+            "kelz0r product link (optional)", key="sc_kelz",
+            placeholder="https://www.kelz0r.dk/magic/…-p-123456.html")
+        s_cm = st.text_input("Cardmarket link (optional)", key="sc_cm")
+        s_cost = st.number_input(
+            "Unit cost (DKK, optional — enables P/L)", min_value=0.0,
+            step=1.0, value=None, key="sc_cost")
+        if st.button("Add card", key="sc_add"):
+            try:
+                sp = scanner.make_single_product(s_name, s_kelz, s_cm)
+            except ValueError as e:
+                st.error(str(e))
+            else:
+                if any(p["id"] == sp["id"] or p["name"] == sp["name"]
+                       for p in cfg["products"]):
+                    st.error(f"“{sp['name']}” is already tracked — if this is "
+                             "a different card, make the name more specific "
+                             "(set, card number).")
+                else:
+                    cfg["products"].append(sp)
+                    scanner.put_config(conn, cfg)
+                    collection["holdings"].append({
+                        "id": f"h-{sp['id']}", "name": sp["name"],
+                        "product_id": sp["id"], "added_by": person,
+                        "quantity": float(s_qty),
+                        "unit_cost_dkk": (float(s_cost)
+                                          if s_cost is not None else None),
+                        "acquired": "", "manual_value_dkk": None,
+                        "sold_price_dkk": None, "sold_date": "", "notes": "",
+                    })
+                    scanner.put_collection(conn, collection)
+                    flash(f"Tracking {sp['name']}"
+                          + (" — priced by the next scheduled scan (≤ ~3 h)"
+                             if sp["sources"] else
+                             " — give it a Manual value or a Cardmarket "
+                             "entry to include it in totals"))
+                    st.rerun()
 
     # -- Valuation summary --------------------------------------------------
     val = _valuation(_ver, basis, _col_key, conn, cfg, collection)

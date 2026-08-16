@@ -44,7 +44,9 @@ DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
 # function proved blind to behavior changes (v1.3.13's kelz0r pre-fetch skip
 # never activated in a process whose scanner predated it but had the probed
 # v1.3.8 function). Keep in sync with _REQUIRED_SCANNER_API in app.py.
-SCANNER_API_VERSION = 2
+# v3: single-card tracking (make_single_product / alertable_products /
+#     track_only excluded from price-drop alerts).
+SCANNER_API_VERSION = 3
 
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
@@ -142,6 +144,56 @@ def _normalize_collection(col: dict) -> dict:
         col["settings"]["valuation_basis"] = "replacement"
     col.setdefault("holdings", [])
     return col
+
+
+# ---------------------------------------------------------------------------
+# Single-card tracking (v1.4.0) — a single is just a track_only product
+# ---------------------------------------------------------------------------
+
+def alertable_products(products: list[dict]) -> list[dict]:
+    """Products that participate in verdict panels and Discord alerts.
+    track_only singles are collection assets — valued and charted, but never
+    a BUY/AVOID signal and never an alert (a 3 kr card dropping 10% is not
+    news the group needs pinged about)."""
+    return [p for p in products if not p.get("track_only")]
+
+
+def make_single_product(name: str, kelz0r_url: str = "",
+                        cardmarket_url: str = "") -> dict:
+    """Build a track_only watchlist product for ONE single card (pure — no DB,
+    no network; the UI form and tests share it). Raises ValueError with a
+    user-facing message on bad input.
+
+    The kelz0r source (if given) gets the card's own words as the title-guard
+    query — a dead slug serving kelz0r's soft-404 category page then FAILS
+    instead of recording a wrong price — and shipping_dkk 0, because a single
+    rides along in a bigger order: landed == shelf keeps the collection from
+    being inflated by a 45 kr shipping estimate on a 3 kr card."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Card name is required.")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:48]
+    if not slug:
+        raise ValueError("Card name needs at least some letters or digits.")
+    product: dict = {"id": f"single-{slug}", "name": name,
+                     "track_only": True, "sources": [], "triggers": {}}
+    k = (kelz0r_url or "").strip()
+    if k:
+        if not re.match(r"https?://(www\.)?kelz0r\.dk/.+-p-\d+\.html?$", k):
+            raise ValueError(
+                "The kelz0r link must be a PRODUCT page — it ends in "
+                "…-p-123456.html (category/search pages can't be tracked).")
+        query = " ".join(w for w in re.findall(r"[a-z0-9]+", name.lower())
+                         if len(w) > 2)[:60]
+        product["sources"].append({
+            "shop": "kelz0r.dk", "method": "kelz0r_product", "url": k,
+            "query": query or name.lower(), "shipping_dkk": 0})
+    c = (cardmarket_url or "").strip()
+    if c:
+        if "cardmarket.com" not in c:
+            raise ValueError("The Cardmarket link must be a cardmarket.com URL.")
+        product["cardmarket"] = {"url": c}
+    return product
 
 
 def _put_kv(conn, key: str, obj: dict) -> None:
@@ -2954,7 +3006,8 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
          "price": verdicts[p["id"]].cheapest_dkk,
          "shop": verdicts[p["id"]].cheapest_shop,
          "url": verdicts[p["id"]].cheapest_url}
-        for p in cfg["products"] if verdicts[p["id"]].cheapest_dkk is not None]
+        for p in alertable_products(cfg["products"])
+        if verdicts[p["id"]].cheapest_dkk is not None]
     # Watches that ARE priced this scan (verified in-stock landed price). A
     # debut here is the "preorder went live" event notify_watch_live pings.
     watch_items = [

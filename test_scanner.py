@@ -2201,3 +2201,63 @@ def test_scanner_api_version_and_default_blocked_shops():
     assert "kelz0r.dk" in scanner.DEFAULT_SETTINGS["hosted_blocked_shops"]
     normalized = scanner._normalize_settings({"settings": {}})
     assert "kelz0r.dk" in normalized["settings"]["hosted_blocked_shops"]
+
+
+# ---------------------------------------------------------------------------
+# v1.4.0 — single-card tracking
+# ---------------------------------------------------------------------------
+
+def test_make_single_product_builder():
+    p = scanner.make_single_product(
+        "Ange Floette (Chaos Rising)",
+        "https://www.kelz0r.dk/magic/ange-floette-pokemon-chaos-p-381853.html",
+        "https://www.cardmarket.com/en/Pokemon/Products/Singles/x/Ange-Floette")
+    assert p["id"] == "single-ange-floette-chaos-rising"
+    assert p["track_only"] is True and p["triggers"] == {}
+    src = p["sources"][0]
+    assert src["method"] == "kelz0r_product" and src["shop"] == "kelz0r.dk"
+    assert src["shipping_dkk"] == 0                    # landed == shelf
+    assert "ange" in src["query"] and "floette" in src["query"]
+    assert "cardmarket.com" in p["cardmarket"]["url"]
+    # no links at all -> valid, unsourced (manual-value tracking)
+    bare = scanner.make_single_product("Some Card")
+    assert bare["sources"] == [] and "cardmarket" not in bare
+
+
+def test_make_single_product_rejects_bad_input():
+    with pytest.raises(ValueError):
+        scanner.make_single_product("   ")             # no name
+    with pytest.raises(ValueError):                    # category, not product
+        scanner.make_single_product(
+            "X", "https://www.kelz0r.dk/magic/chaos-rising-c-187_376.html")
+    with pytest.raises(ValueError):                    # not cardmarket
+        scanner.make_single_product("X", "", "https://example.com/card")
+
+
+def test_alertable_products_excludes_track_only():
+    prods = [{"id": "a"}, {"id": "b", "track_only": True}, {"id": "c"}]
+    assert [p["id"] for p in scanner.alertable_products(prods)] == ["a", "c"]
+
+
+def test_single_card_valued_at_shelf_price(conn):
+    # A scanned single (source shipping_dkk 0) values the holding at SHELF
+    # price — no 45 kr shipping inflation on a 3 kr card.
+    single = scanner.make_single_product(
+        "Testcard Alpha", "https://www.kelz0r.dk/magic/testcard-p-1.html")
+    settings = dict(SETTINGS, shop_shipping_dkk={"kelz0r.dk": 45})
+    obs = Observation(
+        product_id=single["id"], shop="kelz0r.dk", url="http://k",
+        method="kelz0r_product", observed_at=datetime.now().isoformat(
+            timespec="seconds"), title="Testcard Alpha", price_dkk=3.0,
+        landed_dkk=3.0 + scanner.resolve_shipping_dkk(
+            single["sources"][0], settings),
+        in_stock=True, status="ok", source_kind="html")
+    scanner.insert_observation(conn, obs, scan_id=1)
+    assert obs.landed_dkk == 3.0                       # override beat the 45
+    cfg = {"settings": settings, "products": [single]}
+    col = {"settings": {"valuation_basis": "replacement"},
+           "holdings": [{"id": "h1", "name": single["name"],
+                         "product_id": single["id"], "quantity": 2,
+                         "unit_cost_dkk": 2.0}]}
+    v = scanner.value_collection(conn, cfg, col, basis="replacement")
+    assert v["total_value"] == 6.0                     # 2 x 3 kr shelf
