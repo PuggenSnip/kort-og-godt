@@ -46,7 +46,8 @@ DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
 # v1.3.8 function). Keep in sync with _REQUIRED_SCANNER_API in app.py.
 # v3: single-card tracking (make_single_product / alertable_products /
 #     track_only excluded from price-drop alerts).
-SCANNER_API_VERSION = 3
+# v4: reference-value fallback for track_only singles in current_value.
+SCANNER_API_VERSION = 4
 
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
@@ -210,7 +211,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 19   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 20   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -250,6 +251,29 @@ _CONDITIONAL_TARGET_FIXES = {
                                                      (1600, 1500)],
                                    "cardmarket_buy_below_eur": (185, 190),
                                    "avoid_above_dkk": (None, 1560)},
+}
+
+# Conditional source-URL rewrites: (product_id, shop, method) -> (old, new).
+# The add-only merge never touches an EXISTING (shop, method) source, so a
+# release that corrects a source's URL needs this — applied only while the
+# stored URL still equals `old`, so a user's own fix is never clobbered.
+_SOURCE_URL_FIXES = {
+    # v20 — the user's Lonely Mountain single is the FOIL print ($43, not the
+    # $20 non-foil): repoint the pricecharting reference.
+    ("single-the-lonely-mountain-0248-borderless", "pricecharting.com",
+     "pricecharting"): (
+        "https://www.pricecharting.com/game/magic-the-hobbit/"
+        "the-lonely-mountain-borderless-248",
+        "https://www.pricecharting.com/game/magic-the-hobbit/"
+        "the-lonely-mountain-borderless-foil-248"),
+}
+
+# Conditional display-name fixes, same only-if-unedited philosophy.
+_PRODUCT_RENAMES = {
+    # v20 — same card, correct print in the name.
+    "single-the-lonely-mountain-0248-borderless": (
+        "The Lonely Mountain (Hobbit 0248 Borderless)",
+        "The Lonely Mountain (Hobbit 0248 Borderless Foil)"),
 }
 
 # Products removed from the list (the REMOVE side of the otherwise add-only
@@ -354,6 +378,14 @@ def _migrate_config(cfg: dict) -> bool:
                 for old, new in pairs:      # chain: applied in release order
                     if t.get(key) == old:
                         t[key] = new
+        rename = _PRODUCT_RENAMES.get(p.get("id"))
+        if rename and p.get("name") == rename[0]:
+            p["name"] = rename[1]
+        for s in p.get("sources", []):
+            url_fix = _SOURCE_URL_FIXES.get(
+                (p.get("id"), s.get("shop"), s.get("method")))
+            if url_fix and s.get("url") == url_fix[0]:
+                s["url"] = url_fix[1]
     # Drop retired products (only the ids in _REMOVED_PRODUCT_IDS; user
     # products are untouched). Collection holdings linked to a removed product
     # keep their row + link; they just lose live valuation while it's absent.
@@ -2250,6 +2282,20 @@ def current_value(conn: Database, product: dict, settings: dict,
           and r["source_kind"] != "manual" and r["in_stock"] == 1
           and r["landed_dkk"] is not None and r["landed_dkk"] > 0]
     if not ok:
+        # Track-only singles often have ONLY an international reference source
+        # (pricecharting) until a DK shop stocks the card. A reference is not
+        # a buyable price — verdicts still ignore it — but for COLLECTION
+        # value it is the honest market number, so fall back to the freshest
+        # one. Sealed watchlist products are unchanged: no fallback (their
+        # value must stay "what it costs to rebuy in Denmark", or nothing).
+        if product.get("track_only"):
+            refs = [r for r in latest
+                    if r["status"] == "ok" and r["reference_only"]
+                    and r["landed_dkk"] is not None and r["landed_dkk"] > 0]
+            if refs:
+                best = max(refs, key=lambda r: r["observed_at"])
+                return (float(best["landed_dkk"]),
+                        f"{best['shop']} (ref)", best["observed_at"])
         return None
     best = min(ok, key=_cheapest_key(settings))
     return float(best["landed_dkk"]), best["shop"], best["observed_at"]

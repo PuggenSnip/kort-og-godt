@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 19,
+    "config_version": 20,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -577,24 +577,24 @@
     },
     {
       "id": "single-the-lonely-mountain-0248-borderless",
-      "name": "The Lonely Mountain (Hobbit 0248 Borderless)",
+      "name": "The Lonely Mountain (Hobbit 0248 Borderless Foil)",
       "track_only": true,
       "sources": [
         {
           "shop": "pricecharting.com",
           "method": "pricecharting",
-          "url": "https://www.pricecharting.com/game/magic-the-hobbit/the-lonely-mountain-borderless-248",
+          "url": "https://www.pricecharting.com/game/magic-the-hobbit/the-lonely-mountain-borderless-foil-248",
           "pc_field": "used",
           "currency": "USD",
           "reference_only": true,
-          "ref_price_2026_08_17": 19.99
+          "ref_price_2026_08_17": 43.0
         }
       ],
       "cardmarket": {
         "url": "https://www.cardmarket.com/en/Magic/Cards/The-Lonely-Mountain/Versions"
       },
       "triggers": {},
-      "notes": "User single (17/8): MTG Hobbit rare land, borderless #0248. US market ~$20 (PC used) vs CK retail $38. kelz0r Hobbit singles category (universes-beyond-the-hobbit-c-23_24_2634) EMPTY as of 17/8 — add a kelz0r source when they stock singles. CM link = all-versions page (pick 0248 borderless for manual entries)."
+      "notes": "User single (17/8): MTG Hobbit rare land, borderless FOIL #0248 (user confirmed foil — $43 PC used ≈ 275 kr; non-foil is $20). kelz0r Hobbit singles category (universes-beyond-the-hobbit-c-23_24_2634) EMPTY as of 17/8 — add a kelz0r source when they stock singles. CM link = all-versions page (pick 0248 borderless FOIL for manual entries)."
     },
     {
       "id": "mtg-final-fantasy-collector-booster-box",

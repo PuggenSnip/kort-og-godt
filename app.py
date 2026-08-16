@@ -29,14 +29,14 @@ import scanner
 # already the new release. db is reloaded first because scanner binds names
 # from it (`from db import Database`). RELEASE RULE: any change to scanner
 # behavior bumps scanner.SCANNER_API_VERSION and this constant together.
-_REQUIRED_SCANNER_API = 3
+_REQUIRED_SCANNER_API = 4
 if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     import importlib
     import db as _db
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.4.1"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.4.2"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).

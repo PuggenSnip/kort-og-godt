@@ -2261,3 +2261,52 @@ def test_single_card_valued_at_shelf_price(conn):
                          "unit_cost_dkk": 2.0}]}
     v = scanner.value_collection(conn, cfg, col, basis="replacement")
     assert v["total_value"] == 6.0                     # 2 x 3 kr shelf
+
+
+def test_migrate_v20_source_url_and_rename_conditional():
+    pid = "single-the-lonely-mountain-0248-borderless"
+    old_url = ("https://www.pricecharting.com/game/magic-the-hobbit/"
+               "the-lonely-mountain-borderless-248")
+    new_url = ("https://www.pricecharting.com/game/magic-the-hobbit/"
+               "the-lonely-mountain-borderless-foil-248")
+    # A v19 store (old URL + old name) is rewritten to the foil print.
+    cfg = _seed_watch_config(19, {})
+    p = next(x for x in cfg["products"] if x["id"] == pid)
+    p["name"] = "The Lonely Mountain (Hobbit 0248 Borderless)"
+    p["sources"][0]["url"] = old_url
+    scanner._migrate_config(cfg)
+    assert p["sources"][0]["url"] == new_url
+    assert p["name"].endswith("Borderless Foil)")
+    # A user-edited URL/name is never clobbered.
+    cfg2 = _seed_watch_config(19, {})
+    p2 = next(x for x in cfg2["products"] if x["id"] == pid)
+    p2["name"] = "My Lonely Mountain"
+    p2["sources"][0]["url"] = "https://www.pricecharting.com/game/x/custom"
+    scanner._migrate_config(cfg2)
+    assert p2["sources"][0]["url"].endswith("/custom")
+    assert p2["name"] == "My Lonely Mountain"
+
+
+def test_track_only_reference_fallback_valuation(conn):
+    # A track_only single with ONLY a reference price still values in the
+    # collection (freshest reference, labelled "(ref)"); a sealed product in
+    # the same state does NOT — its value stays "rebuyable in DK or nothing".
+    for pid, track in (("single-x", True), ("sealed-x", False)):
+        put(conn, product_id=pid, shop="oldref.com", method="pricecharting",
+            price=260.0, days_ago=3, reference_only=True, in_stock=None,
+            status="ok")
+        put(conn, product_id=pid, shop="pricecharting.com",
+            method="pricecharting", price=275.0, days_ago=1,
+            reference_only=True, in_stock=None, status="ok")
+    srcs = [{"shop": "oldref.com", "method": "pricecharting"},
+            {"shop": "pricecharting.com", "method": "pricecharting"}]
+    single = {"id": "single-x", "name": "Single X", "track_only": True,
+              "sources": srcs}
+    sealed = {"id": "sealed-x", "name": "Sealed X", "sources": srcs}
+    got = scanner.current_value(conn, single, SETTINGS, basis="replacement")
+    assert got is not None
+    value, label, _seen = got
+    assert value == 275.0                      # freshest ref, not cheapest
+    assert label == "pricecharting.com (ref)"
+    assert scanner.current_value(conn, sealed, SETTINGS,
+                                 basis="replacement") is None
