@@ -47,7 +47,8 @@ DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
 # v3: single-card tracking (make_single_product / alertable_products /
 #     track_only excluded from price-drop alerts).
 # v4: reference-value fallback for track_only singles in current_value.
-SCANNER_API_VERSION = 4
+# v5: apply_seed_holdings in run_headless + calmer hosted-skip wording.
+SCANNER_API_VERSION = 5
 
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
@@ -145,6 +146,63 @@ def _normalize_collection(col: dict) -> dict:
         col["settings"]["valuation_basis"] = "replacement"
     col.setdefault("holdings", [])
     return col
+
+
+# One-shot collection seeds: holdings added ON BEHALF OF a user who asked in
+# chat ("add that card to my collection"). The tool can ship watchlist
+# products via the seed file, but holdings are runtime data only the deployed
+# app/cron can write — so the cron applies these, exactly once per deployment
+# DB (stamped in app_config), and REPAIRS rather than duplicates: a holding
+# already linked to the product is left alone; a hand-typed row whose name
+# contains `name_fragment` but has no product link gets LINKED (keeping the
+# owner's qty/cost); only when neither exists is the holding appended.
+_SEED_HOLDINGS = [
+    {
+        "once_key": "lonely-mountain-foil-v21",
+        "name_fragment": "lonely mountain",
+        "holding": {
+            "id": "h-single-the-lonely-mountain-0248-borderless",
+            "name": "The Lonely Mountain (Hobbit 0248 Borderless Foil)",
+            "product_id": "single-the-lonely-mountain-0248-borderless",
+            "added_by": None, "quantity": 1, "unit_cost_dkk": None,
+            "acquired": "", "manual_value_dkk": None,
+            "sold_price_dkk": None, "sold_date": "", "notes": "",
+        },
+    },
+]
+
+
+def apply_seed_holdings(conn) -> list[str]:
+    """Apply pending _SEED_HOLDINGS to the shared collection (see above).
+    Returns human-readable descriptions of what was done ([] = nothing)."""
+    done: list[str] = []
+    for entry in _SEED_HOLDINGS:
+        key = f"seed_holding:{entry['once_key']}"
+        if conn.execute("SELECT 1 FROM app_config WHERE key = :k",
+                        {"k": key}).fetchone():
+            continue
+        col = get_collection(conn)
+        h = entry["holding"]
+        existing = None
+        for x in col["holdings"]:
+            if x.get("product_id") == h["product_id"]:
+                existing = x                    # already linked — leave it
+                break
+            frag = entry.get("name_fragment")
+            if (frag and frag in (x.get("name") or "").lower()
+                    and not x.get("product_id")):
+                existing = x                    # hand-typed, unlinked row
+                break
+        if existing is None:
+            col["holdings"].append(dict(h))
+            put_collection(conn, col)
+            done.append(f"{h['name']} (added)")
+        elif not existing.get("product_id"):
+            existing["product_id"] = h["product_id"]
+            put_collection(conn, col)
+            done.append(f"{existing.get('name') or h['name']} (linked)")
+        _put_kv(conn, key, {"applied": now_iso()})
+    return done
 
 
 # ---------------------------------------------------------------------------
@@ -1280,8 +1338,10 @@ def scan_source(product: dict, source: dict, fetcher: PoliteFetcher,
     if (settings.get("hosted_vantage")
             and source["shop"] in (settings.get("hosted_blocked_shops") or {})):
         obs.status = "skipped"
-        obs.error = ("shop blocks this host's IPs — covered by the "
-                     "scheduled scans")
+        # Phrased as the healthy state it is — the first wording ("shop
+        # blocks this host's IPs") read like an error and got bug-reported.
+        obs.error = ("not fetched from this server — priced by the "
+                     "scheduled scans (fresh within ~3 h)")
         obs.record = False
         return obs
 
@@ -3034,6 +3094,12 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
     cfg["settings"]["record_fixtures"] = False
     if non_dk_vantage:      # e.g. a US-based CI runner: skip geo-priced shops
         cfg["settings"]["non_dk_vantage"] = True
+    # Chat-requested holdings land BEFORE the scan so snapshot_collection
+    # already includes them (one-shot; no-op forever after).
+    try:
+        seeded_holdings = apply_seed_holdings(conn)
+    except Exception:       # noqa: BLE001 — seeding must never break a scan
+        seeded_holdings = []
     scan_id, observations = run_scan(cfg, conn, progress)
     try:
         snapshot_collection(conn, cfg, get_collection(conn))
@@ -3086,4 +3152,5 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
         "new_buy_ids": new_ids,        # None = diff skipped (no webhook)
         "price_drops": drops,          # None = diff skipped (no webhook)
         "watch_live": watch_live,      # None = diff skipped (no webhook)
+        "seeded_holdings": seeded_holdings,
     }

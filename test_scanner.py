@@ -2145,7 +2145,7 @@ def test_hosted_blocked_shop_skipped_prefetch_and_not_recorded(conn):
     f.close()
     assert obs.status == "skipped"
     assert obs.record is False
-    assert "blocks this host" in obs.error
+    assert "priced by the scheduled scans" in obs.error
     assert t.calls == []                # pre-fetch: NO network at all
 
 
@@ -2310,3 +2310,48 @@ def test_track_only_reference_fallback_valuation(conn):
     assert label == "pricecharting.com (ref)"
     assert scanner.current_value(conn, sealed, SETTINGS,
                                  basis="replacement") is None
+
+
+# ---------------------------------------------------------------------------
+# v1.4.3 — one-shot seeded holdings (chat-requested collection adds)
+# ---------------------------------------------------------------------------
+
+def test_seed_holdings_adds_once_then_never_again(conn):
+    done = scanner.apply_seed_holdings(conn)
+    assert any("Lonely Mountain" in d and "(added)" in d for d in done)
+    col = scanner.get_collection(conn)
+    matches = [h for h in col["holdings"]
+               if h.get("product_id") == "single-the-lonely-mountain-0248-borderless"]
+    assert len(matches) == 1
+    assert scanner.apply_seed_holdings(conn) == []     # stamped — no repeat
+    assert len(scanner.get_collection(conn)["holdings"]) == len(col["holdings"])
+
+
+def test_seed_holdings_links_hand_typed_row_instead_of_duplicating(conn):
+    col = scanner.get_collection(conn)
+    col["holdings"].append({"id": "hx", "name": "the Lonely Mountain foil",
+                            "product_id": None, "added_by": "Harley",
+                            "quantity": 1, "unit_cost_dkk": 150.0})
+    scanner.put_collection(conn, col)
+    done = scanner.apply_seed_holdings(conn)
+    assert any("(linked)" in d for d in done)
+    col2 = scanner.get_collection(conn)
+    linked = [h for h in col2["holdings"]
+              if h.get("product_id") == "single-the-lonely-mountain-0248-borderless"]
+    assert len(linked) == 1
+    assert linked[0]["id"] == "hx"                     # THEIR row, repaired
+    assert linked[0]["unit_cost_dkk"] == 150.0         # their cost preserved
+
+
+def test_seed_holdings_leaves_already_linked_row_alone(conn):
+    col = scanner.get_collection(conn)
+    col["holdings"].append({
+        "id": "hy", "name": "My Mountain",
+        "product_id": "single-the-lonely-mountain-0248-borderless",
+        "quantity": 2, "unit_cost_dkk": 100.0})
+    scanner.put_collection(conn, col)
+    assert scanner.apply_seed_holdings(conn) == []     # nothing to do
+    col2 = scanner.get_collection(conn)
+    linked = [h for h in col2["holdings"]
+              if h.get("product_id") == "single-the-lonely-mountain-0248-borderless"]
+    assert len(linked) == 1 and linked[0]["quantity"] == 2

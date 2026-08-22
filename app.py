@@ -29,14 +29,14 @@ import scanner
 # already the new release. db is reloaded first because scanner binds names
 # from it (`from db import Database`). RELEASE RULE: any change to scanner
 # behavior bumps scanner.SCANNER_API_VERSION and this constant together.
-_REQUIRED_SCANNER_API = 4
+_REQUIRED_SCANNER_API = 5
 if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     import importlib
     import db as _db
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.4.2"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.4.3"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -1055,15 +1055,11 @@ with tab_collection:
                 "cost, so they count toward Market value but not P/L. Add a "
                 "unit cost to include them.")
 
-        # P/L broken down three ways. Each is shown only when it actually splits
-        # the portfolio (more than one group), so single-row tables that just
-        # repeat the totals above are suppressed.
-        bp = val["by_person"]
-        if len(bp) > 1 or (bp and "(unknown)" not in bp):
-            st.markdown("**By person**")
-            st.dataframe(pl_breakdown_rows(bp, "Person"),
-                         width="stretch", hide_index=True)
-
+        # P/L broken down by game and set, shown only when a table actually
+        # splits the portfolio (more than one group). The by-person table was
+        # dropped 22 Aug on group request — the roster doesn't attribute
+        # holdings, so it only ever showed "(unknown)" noise; the data stays
+        # in value_collection should it ever be wanted back.
         bg = val["by_game"]
         if len(bg) > 1:
             st.markdown("**By game**")
