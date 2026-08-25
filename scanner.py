@@ -48,7 +48,8 @@ DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
 #     track_only excluded from price-drop alerts).
 # v4: reference-value fallback for track_only singles in current_value.
 # v5: apply_seed_holdings in run_headless + calmer hosted-skip wording.
-SCANNER_API_VERSION = 5
+# v6: apply_seed_cm_entries (chat-stated Cardmarket figures) in run_headless.
+SCANNER_API_VERSION = 6
 
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",
@@ -172,6 +173,44 @@ _SEED_HOLDINGS = [
 ]
 
 
+# One-shot manual Cardmarket entries, same contract as _SEED_HOLDINGS: figures
+# the user states in chat ("verified live on Cardmarket, kl. 23:10") become
+# ordinary manual CM entries — charted, aged and verdict-checked exactly like
+# ones typed into the UI — applied once by the cron and stamped in app_config.
+_SEED_CM_ENTRIES = [
+    # 25 Aug 2026 brief (23:10 CEST, EN-filtered): PB Box credible floor
+    # €188-190 (Poromagia/BlockhouseGames) → €189; Hobbit Play credible floor
+    # €146 (FANcyTreasure 2K) with cheap stacks selling through.
+    {"once_key": "brief-2026-08-25-pitch-black-box",
+     "product_id": "pitch-black-booster-box-en", "eur": 189.0,
+     "observed_at": "2026-08-25T23:10:00", "added_by": "brief"},
+    {"once_key": "brief-2026-08-25-hobbit-play",
+     "product_id": "mtg-hobbit-play-booster-box", "eur": 146.0,
+     "observed_at": "2026-08-25T23:10:00", "added_by": "brief"},
+]
+
+
+def apply_seed_cm_entries(conn, cfg: dict) -> list[str]:
+    """Apply pending _SEED_CM_ENTRIES (see above). Returns descriptions of
+    entries actually added ([] = everything already applied)."""
+    done: list[str] = []
+    products = {p.get("id"): p for p in cfg.get("products", [])}
+    for entry in _SEED_CM_ENTRIES:
+        key = f"seed_cm:{entry['once_key']}"
+        if conn.execute("SELECT 1 FROM app_config WHERE key = :k",
+                        {"k": key}).fetchone():
+            continue
+        product = products.get(entry["product_id"])
+        if product is not None:
+            add_manual_cardmarket_entry(
+                conn, product, entry["eur"], cfg.get("settings", {}),
+                added_by=entry.get("added_by"),
+                observed_at=entry.get("observed_at"))
+            done.append(f"{product['name']} €{entry['eur']:g}")
+        _put_kv(conn, key, {"applied": now_iso()})
+    return done
+
+
 def apply_seed_holdings(conn) -> list[str]:
     """Apply pending _SEED_HOLDINGS to the shared collection (see above).
     Returns human-readable descriptions of what was done ([] = nothing)."""
@@ -269,7 +308,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 20   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 21   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -283,7 +322,8 @@ SEED_CONFIG_VERSION = 20   # bump when watchlist.json ships sources/settings
                            #  v17: + Chaos Rising PC ETB reference-watch;
                            #  v18: 16 Aug brief — PB Box last-call 1500 +
                            #       avoid ceiling 1560;
-                           #  v19: + Lonely Mountain 0248 single (user))
+                           #  v19: + Lonely Mountain 0248 single (user);
+                           #  v21: 25 Aug brief notes refresh)
 
 # Conditional trigger corrections: product_id -> {trigger key: (old, new)} or
 # {trigger key: [(old1, new1), (old2, new2), ...]} — a CHAIN applied in order,
@@ -3094,12 +3134,16 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
     cfg["settings"]["record_fixtures"] = False
     if non_dk_vantage:      # e.g. a US-based CI runner: skip geo-priced shops
         cfg["settings"]["non_dk_vantage"] = True
-    # Chat-requested holdings land BEFORE the scan so snapshot_collection
-    # already includes them (one-shot; no-op forever after).
+    # Chat-requested holdings + Cardmarket figures land BEFORE the scan so the
+    # snapshot and the verdicts already include them (one-shot; no-op after).
     try:
         seeded_holdings = apply_seed_holdings(conn)
     except Exception:       # noqa: BLE001 — seeding must never break a scan
         seeded_holdings = []
+    try:
+        seeded_cm = apply_seed_cm_entries(conn, cfg)
+    except Exception:       # noqa: BLE001 — seeding must never break a scan
+        seeded_cm = []
     scan_id, observations = run_scan(cfg, conn, progress)
     try:
         snapshot_collection(conn, cfg, get_collection(conn))
@@ -3153,4 +3197,5 @@ def run_headless(conn: Database, webhook: Optional[str] = None,
         "price_drops": drops,          # None = diff skipped (no webhook)
         "watch_live": watch_live,      # None = diff skipped (no webhook)
         "seeded_holdings": seeded_holdings,
+        "seeded_cm": seeded_cm,
     }

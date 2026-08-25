@@ -39,6 +39,8 @@ def main() -> int:
     finally:
         conn.close()
 
+    if summary.get("seeded_cm"):
+        print("Seeded Cardmarket entries:", "; ".join(summary["seeded_cm"]))
     if summary.get("seeded_holdings"):
         print("Seeded holdings:", "; ".join(summary["seeded_holdings"]))
     print(f"\nScan #{summary['scan_id']}: {summary['n_ok']}/"

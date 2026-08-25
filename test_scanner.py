@@ -2355,3 +2355,20 @@ def test_seed_holdings_leaves_already_linked_row_alone(conn):
     linked = [h for h in col2["holdings"]
               if h.get("product_id") == "single-the-lonely-mountain-0248-borderless"]
     assert len(linked) == 1 and linked[0]["quantity"] == 2
+
+
+def test_seed_cm_entries_apply_once_and_feed_verdict_data(conn):
+    cfg = {"settings": dict(SETTINGS),
+           "products": [{"id": "pitch-black-booster-box-en",
+                         "name": "PB Box", "cardmarket": {"url": "http://cm"}},
+                        {"id": "mtg-hobbit-play-booster-box",
+                         "name": "Hobbit Play", "cardmarket": {"url": "http://cm"}}]}
+    done = scanner.apply_seed_cm_entries(conn, cfg)
+    assert len(done) == 2 and any("189" in d for d in done)
+    row = scanner._latest_cm_entry(conn, "pitch-black-booster-box-en")
+    assert row["price_native"] == 189.0
+    assert row["observed_at"].startswith("2026-08-25")   # brief's timestamp
+    assert row["added_by"] == "brief"
+    assert scanner.apply_seed_cm_entries(conn, cfg) == []   # stamped
+    entries = scanner.list_cardmarket_entries(conn, "pitch-black-booster-box-en")
+    assert len(entries) == 1                                # no duplicates

@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 20,
+    "config_version": 21,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -90,7 +90,7 @@
         "plausible_max_dkk": 3000,
         "avoid_above_dkk": 1560
       },
-      "notes": "16/8 brief: reversal CONFIRMED, LAST CALL before the 30th wave (16 Sept) — CM floor ~€187-190 ≈ 1.470-1.490 landed. DK trigger 1500; ≥1560 (€200+ship) = AVOID, do not chase. Aug 5 bottom (€171-180) held."
+      "notes": "25/8 brief: UPTREND CONFIRMED (1d €193,80 > 7d €188,27 > 30d €184,21; supply 1.311 falling). BUY-LAST-CALL: DK ≤1500 landed, ≥1560 = AVOID (€200+ship, entry gone). Credible CM floor €188-190. CATALYST: 30th Celebration 16 Sept — re-rate after launch."
     },
     {
       "id": "ascended-heroes-etb-en",
@@ -247,7 +247,7 @@
         "plausible_min_dkk": 700,
         "plausible_max_dkk": 2200
       },
-      "notes": "FIRED 16/8 two days post-release: CM floor €145-148 (4XTrading, 61K) ≈ 1.170 landed ≤ target 1200. DK retail (mtgwebshop 1499) NOT a buy. Glut (1.6K listings) may dip to €135-140. Ignore €58/€77 zero-rating scam listings."
+      "notes": "25/8 brief: STRETCH ZONE. Credible CM floor €146 ≈ 1.165 landed; 7d €154,72 easing BUT sell-through accelerating (4XTrading 36 sold out, Auenland 46→29; supply 1.788) — downside likely limited. BUY ≤1200 DK landed. DK retail (mtgwebshop 1499) NOT the buy."
     },
     {
       "id": "riftbound-unleashed-display",
