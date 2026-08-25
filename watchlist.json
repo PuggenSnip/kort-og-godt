@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 21,
+    "config_version": 22,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -390,6 +390,12 @@
       "watch": true,
       "sources": [
         {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-chaos-rising-pokemon-center-elite-trainer-box",
+          "ref_price_2026_08_26": 1899
+        },
+        {
           "shop": "pricecharting.com",
           "method": "pricecharting",
           "url": "https://www.pricecharting.com/game/pokemon-chaos-rising/elite-trainer-box-pokemon-center",
@@ -406,7 +412,7 @@
         "plausible_min_dkk": 300,
         "plausible_max_dkk": 2500
       },
-      "notes": "PC-exclusive (ME04, Fennekin full-art promo). NO Danish listing yet (verified 2026-08-08: all 8 shops + pokehulen swept; kelz0r has only the regular CR ETB) — parked as a reference-watch: US market via pricecharting (~30 ≈ 835 kr) + manual Cardmarket. Add the DK source + a LANDED target the day a shop lists it (kelz0r imported the 30th PC ETB, likely candidate)."
+      "notes": "PC-exclusive (ME04, Fennekin promo). rogerz.dk listed it 26/8 @1899 in stock (validated live) — first DK source; was reference-only since 8/8. Group holds 9× @1250 (26/8). No buy target: the watch is a valuation source now. kelz0r still not listing it."
     },
     {
       "id": "perfect-order-booster-box-en",
