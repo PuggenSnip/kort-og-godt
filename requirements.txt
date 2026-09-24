@@ -3,6 +3,6 @@ extra-streamlit-components>=0.1.71,<0.2
 httpx>=0.27
 selectolax>=0.3.21
 pillow>=10.0
-sqlalchemy>=2.0
+sqlalchemy>=2.0,<2.1   # 2.1 changed the default Postgres driver; upgrade deliberately
 psycopg2-binary>=2.9
 pytest>=8.0

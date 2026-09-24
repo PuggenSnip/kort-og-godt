@@ -49,7 +49,8 @@ DEFAULT_COLLECTION = {"settings": {"valuation_basis": "replacement"},
 # v4: reference-value fallback for track_only singles in current_value.
 # v5: apply_seed_holdings in run_headless + calmer hosted-skip wording.
 # v6: apply_seed_cm_entries (chat-stated Cardmarket figures) in run_headless.
-SCANNER_API_VERSION = 6
+# v7: db._to_url pins the psycopg2 driver (SQLAlchemy 2.1 default change).
+SCANNER_API_VERSION = 7
 
 DEFAULT_SETTINGS = {
     "user_agent": "KortOgGodtScanner/1.0 (personal price watchlist; low volume; not a crawler)",

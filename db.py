@@ -95,10 +95,17 @@ def _to_url(url) -> str:
     if url is None:
         url = os.environ.get("DATABASE_URL") or DEFAULT_URL
     s = str(url)
-    if s.startswith(("sqlite:", "postgres:", "postgresql:")):
+    if s.startswith(("sqlite:", "postgres:", "postgresql:", "postgresql+")):
         # Supabase/Heroku hand out 'postgres://'; SQLAlchemy wants 'postgresql://'.
         if s.startswith("postgres://"):
             s = "postgresql://" + s[len("postgres://"):]
+        # Name the driver explicitly. A bare 'postgresql://' lets SQLAlchemy
+        # pick its DEFAULT driver, and SQLAlchemy 2.1 switched that default
+        # from psycopg2 to psycopg (v3) — which we don't install — so every
+        # fresh install crashed on connect (24 Sep 2026, cron + app alike).
+        # An explicit '+driver' in the URL is always respected as given.
+        if s.startswith("postgresql://"):
+            s = "postgresql+psycopg2://" + s[len("postgresql://"):]
         return s
     return f"sqlite:///{Path(s).as_posix()}"
 

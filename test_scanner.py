@@ -2372,3 +2372,17 @@ def test_seed_cm_entries_apply_once_and_feed_verdict_data(conn):
     assert scanner.apply_seed_cm_entries(conn, cfg) == []   # stamped
     entries = scanner.list_cardmarket_entries(conn, "pitch-black-booster-box-en")
     assert len(entries) == 1                                # no duplicates
+
+
+def test_db_url_pins_psycopg2_driver():
+    # SQLAlchemy 2.1 changed the DEFAULT driver for bare 'postgresql://' to
+    # psycopg (v3), which isn't installed — every fresh install crashed on
+    # connect. The URL must always name psycopg2 explicitly.
+    import db
+    assert db._to_url("postgres://u:p@h:5432/d") == \
+        "postgresql+psycopg2://u:p@h:5432/d"
+    assert db._to_url("postgresql://u:p@h:5432/d") == \
+        "postgresql+psycopg2://u:p@h:5432/d"
+    # an explicit driver is left untouched; sqlite is untouched
+    assert db._to_url("postgresql+psycopg://u@h/d") == "postgresql+psycopg://u@h/d"
+    assert db._to_url("sqlite:///x.db") == "sqlite:///x.db"
