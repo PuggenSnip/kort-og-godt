@@ -36,7 +36,7 @@ if getattr(scanner, "SCANNER_API_VERSION", 1) < _REQUIRED_SCANNER_API:
     importlib.reload(_db)
     scanner = importlib.reload(scanner)
 
-APP_VERSION = "1.4.5"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
+APP_VERSION = "1.4.6"   # semver MAJOR.MINOR.PATCH. 1.0 = first stable release;
                          # minor bumps = feature/watchlist waves after it.
 
 # Use the trading-card logo as the browser-tab icon (fallback to an emoji).
@@ -483,6 +483,7 @@ with tab_scan:
         n_sources = sum(
             1 for p in cfg["products"] for s in p.get("sources", [])
             if s["method"] != "cardmarket_manual")
+        watch_ids = {p["id"] for p in cfg["products"] if p.get("watch")}
         progress_bar = st.progress(0.0, text="Starting scan …")
         failures: list[str] = []
         done = 0
@@ -500,6 +501,13 @@ with tab_scan:
                     st.write(f"✅ {shop} — {product_name}: {price}")
                 elif obs.status == "skipped":
                     st.write(f"⏭️ {shop} — {product_name}: {obs.error}")
+                elif obs.product_id in watch_ids:
+                    # A watch's source failing is the EXPECTED pre-launch state
+                    # (unpriced 0 kr / placeholder listings) — shown as awaiting,
+                    # not as a red failure (the verdict engine already treats
+                    # watch failures the same way: never UNVERIFIED).
+                    st.write(f"⏳ {shop} — {product_name}: awaiting price "
+                             f"({obs.error})")
                 else:
                     st.write(f"❌ {shop} — {product_name}: {obs.error}")
                     failures.append(f"{shop} / {product_name}: {obs.error}")

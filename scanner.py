@@ -308,7 +308,7 @@ def _put_kv(conn, key: str, obj: dict) -> None:
         {"k": key, "v": value})
 
 
-SEED_CONFIG_VERSION = 22   # bump when watchlist.json ships sources/settings
+SEED_CONFIG_VERSION = 23   # bump when watchlist.json ships sources/settings
                            # that existing DB configs should absorb
                            # (v10: notify-watch launch items;
                            #  v11: 30th-Celebration watch targets → landed MSRP;
@@ -324,7 +324,8 @@ SEED_CONFIG_VERSION = 22   # bump when watchlist.json ships sources/settings
                            #       avoid ceiling 1560;
                            #  v19: + Lonely Mountain 0248 single (user);
                            #  v21: 25 Aug brief notes refresh;
-                           #  v22: rogerz source for Chaos Rising PC ETB)
+                           #  v22: rogerz source for Chaos Rising PC ETB;
+                           #  v23: + Delta Reign ETB/Box/PC ETB watches)
 
 # Conditional trigger corrections: product_id -> {trigger key: (old, new)} or
 # {trigger key: [(old1, new1), (old2, new2), ...]} — a CHAIN applied in order,

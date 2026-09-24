@@ -8,7 +8,7 @@
     "trend_min_days_7d": 3,
     "trend_min_days_30d": 10,
     "record_fixtures": true,
-    "config_version": 22,
+    "config_version": 23,
     "shop_shipping_dkk": {
       "symbizon.dk": 0,
       "mtgwebshop.dk": 45,
@@ -767,6 +767,86 @@
         "plausible_max_dkk": 2500
       },
       "notes": "WATCH — MD#10 (Pokémon Center ETB, 11 boosters; 'MSRP only' — the Ascended Heroes PC ETB went 7,7×). Only DK listing is Kelz0r (p-385656), an unpriced [PREORDER]: the page carries a 9999,95 placeholder price that the plausibility band (400–2500) correctly REFUSES, so it stays ⏳ WATCH and pings when a REAL price + stock appear. NO buy target on purpose — the PC ETB MSRP isn't published and I won't guess; set buy_below_dkk (≈ landed MSRP) once it prices, or just act on the 'went live' ping. Distinct from the regular Nidorina ETB (p-385654, 9 boosters); 'center' in the query keeps them apart. Validated live 2026-08-01."
+    },
+    {
+      "id": "pkmn-delta-reign-etb-en",
+      "name": "Pokémon Delta Reign ETB EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "symbizon.dk",
+          "method": "shopify_handle",
+          "url": "https://symbizon.dk/products/pokemon-kort-mega-evolution-delta-reign-elite-trainer-box",
+          "ref_price_2026_09_24": 699
+        },
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-delta-reign-elite-trainer-box-mega-rayquazakyogre-boks-medboosters-promokort-tilbehor-p-397864.html",
+          "query": "delta reign elite trainer",
+          "ref_price_2026_09_24": 669.95
+        },
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-delta-reign-elite-trainer-box"
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 715,
+        "plausible_min_dkk": 300,
+        "plausible_max_dkk": 1500
+      },
+      "notes": "Delta Reign (ME06) releases 6 Nov. Watch armed pre-release (24/9) — the 30th Celebration lesson: MSRP preorder stock vanished instantly, so the alert must exist BEFORE slots open. Target = user-approved landed suggestion just above the current preorder price. rogerz listed at 0 kr (unpriced placeholder) — shows 'awaiting price' until they price it; rogerz was the MSRP restock shop for the 30th. ETB: symbizon 699 (free ship) + kelz0r 669,95 (+45 = 714,95) both fire at 715."
+    },
+    {
+      "id": "pkmn-delta-reign-booster-box-en",
+      "name": "Pokémon Delta Reign Booster Box EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "symbizon.dk",
+          "method": "shopify_handle",
+          "url": "https://symbizon.dk/products/pokemon-kort-booster-box-mega-evolution-delta-reign-36-booster-packs",
+          "ref_price_2026_09_24": 1899
+        },
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-delta-reign-booster-box"
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1900,
+        "plausible_min_dkk": 900,
+        "plausible_max_dkk": 3500
+      },
+      "notes": "Delta Reign (ME06) releases 6 Nov. Watch armed pre-release (24/9) — the 30th Celebration lesson: MSRP preorder stock vanished instantly, so the alert must exist BEFORE slots open. Target = user-approved landed suggestion just above the current preorder price. rogerz listed at 0 kr (unpriced placeholder) — shows 'awaiting price' until they price it; rogerz was the MSRP restock shop for the 30th. Box: symbizon 1.899 (free ship); kelz0r does not list the box."
+    },
+    {
+      "id": "pkmn-delta-reign-pc-etb-en",
+      "name": "Pokémon Delta Reign Pokémon Center ETB EN",
+      "watch": true,
+      "sources": [
+        {
+          "shop": "kelz0r.dk",
+          "method": "kelz0r_product",
+          "url": "https://www.kelz0r.dk/magic/pokemon-mega-evolution-delta-reign-pokemon-center-elite-trainer-box-mega-rayquazakyogre-boks-med-boosters-promokort-tilbehor-p-397866.html",
+          "query": "delta reign pokemon center",
+          "ref_price_2026_09_24": 1447
+        },
+        {
+          "shop": "rogerz.dk",
+          "method": "shopify_handle",
+          "url": "https://rogerz.dk/products/pokemon-tcg-delta-reign-pokemon-center-elite-trainer-box"
+        }
+      ],
+      "triggers": {
+        "buy_below_dkk": 1500,
+        "plausible_min_dkk": 400,
+        "plausible_max_dkk": 3000
+      },
+      "notes": "Delta Reign (ME06) releases 6 Nov. Watch armed pre-release (24/9) — the 30th Celebration lesson: MSRP preorder stock vanished instantly, so the alert must exist BEFORE slots open. Target = user-approved landed suggestion just above the current preorder price. rogerz listed at 0 kr (unpriced placeholder) — shows 'awaiting price' until they price it; rogerz was the MSRP restock shop for the 30th. PC ETB: kelz0r 1.447 (+45 = 1.492)."
     },
     {
       "id": "one-piece-op15-kamis-island-en",
